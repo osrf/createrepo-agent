@@ -1,0 +1,37 @@
+---
+name: Continuous Integration
+
+on:  # yamllint disable-line rule:truthy
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - run: >
+          dnf install --refresh -y
+          cmake
+          createrepo_c-devel
+          gcc
+          git
+          libassuan-devel
+          make
+      - uses: actions/checkout@v2
+      - run: mkdir -p build
+      - run: >
+          cmake ..
+          -DCMAKE_C_FLAGS="-Werror"
+          -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
+        working-directory: ${{github.workspace}}/build
+      - run: cmake --build . -j2
+        working-directory: ${{github.workspace}}/build
+      - run: ctest --output-on-failure -j2
+        working-directory: ${{github.workspace}}/build
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: yamllint .
