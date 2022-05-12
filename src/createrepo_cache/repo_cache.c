@@ -838,8 +838,9 @@ cra_cache_pattern_remove(
     node = g_list_next(node);
   }
 
-  if (!found)
+  if (!found) {
     return CRE_NOFILE;
+  }
 
   repo->flags |= CRA_REPO_DIRTY;
 

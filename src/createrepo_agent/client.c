@@ -19,7 +19,10 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 
+#include <glib.h>
+
 #include "createrepo_agent/client.h"
+#include "createrepo_agent/common.h"
 
 static assuan_fd_t
 create_client_socket(const char * name)
@@ -89,35 +92,29 @@ start_server(const char * name)
 {
   pid_t pid;
   gpg_error_t rc = 0;
-  char * argv[] = {
-    "createrepo_agent",
-    strdup(name),
-    NULL,
-  };
+  int i;
+  int status;
 
   pid = fork();
   if ((pid_t)(-1) == pid) {
     rc = gpg_err_code_from_errno(errno);
     fprintf(stderr, "failed to fork process: %s\n", gpg_strerror(rc));
   } else if ((pid_t)(0) == pid) {
-    // TODO(cottsay): Find the executable. Maybe with PATH, maybe from argv[0]
-    execv("./createrepo_c_agent", argv);
+    execlp("createrepo-agent", "createrepo-agent", name, "--daemon", NULL);
     exit(127);
   }
 
-  /*
-  // TODO(cottsay): Wait for daemonize
-  int i;
-  int status;
-  while((pid_t)(-1) == (i = waitpid(pid, &status, 0)) && errno == EINTR);
+  while ((pid_t)(-1) == (i = waitpid(pid, &status, 0)) && errno == EINTR) {}
   if (!i) {
     fprintf(stderr, "timeout waiting for server to start\n");
     rc = gpg_error(GPG_ERR_TIMEOUT);
-  } else if (WIFEXITED (status)) {
+  } else if (!WIFEXITED(status)) {
+    fprintf(stderr, "error starting server process\n");
+    rc = gpg_error(GPG_ERR_GENERAL);
+  } else if (WEXITSTATUS(status)) {
     fprintf(stderr, "server process returned %d\n", WEXITSTATUS(status));
     rc = gpg_error(GPG_ERR_GENERAL);
   }
-  */
 
   return rc;
 }
@@ -126,9 +123,16 @@ gpg_error_t
 connect_and_start_server(assuan_context_t ctx, const char * name)
 {
   gpg_error_t rc;
+  gchar * sockname;
 
-  rc = connect_to_server(ctx, name);
+  sockname = g_strconcat(name, "/", SOCK_NAME, NULL);
+  if (!sockname) {
+    return gpg_error(GPG_ERR_ENOMEM);
+  }
+
+  rc = connect_to_server(ctx, sockname);
   if (!rc) {
+    g_free(sockname);
     return rc;
   }
 
@@ -136,12 +140,15 @@ connect_and_start_server(assuan_context_t ctx, const char * name)
 
   rc = start_server(name);
   if (rc) {
+    g_free(sockname);
     return rc;
   }
 
   // TODO(cottsay): End lock
 
-  rc = wait_and_connect_to_server(ctx, name, 5);
+  rc = wait_and_connect_to_server(ctx, sockname, 5);
+
+  g_free(sockname);
 
   return rc;
 }

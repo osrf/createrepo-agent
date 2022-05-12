@@ -20,15 +20,12 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <glib.h>
+
+#include "createrepo_agent/agent_options.h"
 #include "createrepo_agent/client.h"
 #include "createrepo_agent/command.h"
-
-const char * const sock_name = "/S.createrepo_agent";
-
-const char * const usage =
-  "createrepo_agent\n"
-  "\n"
-  "Usage: %s REPOSITORY_ROOT\n";
+#include "createrepo_agent/common.h"
 
 static gpg_error_t
 try_server(const char * name)
@@ -94,32 +91,48 @@ ignore_sigpipe()
 int
 main(int argc, char * argv[])
 {
-  int fd;
-  char * sockpath;
-  size_t size;
+  assuan_fd_t fd;
+  gchar * sockpath;
+  GError * err = NULL;
+  cra_AgentOptions opts = {0};
+  pid_t pid;
 
-  if (argc < 2) {
-    fprintf(stderr, usage, argv[0]);
+  GOptionContext * option_ctx = g_option_context_new(NULL);
+  g_option_context_set_main_group(option_ctx, cra_get_agent_option_group(&opts));
+  if (!g_option_context_parse(option_ctx, &argc, &argv, &err)) {
+    fprintf(stderr, "invalid arguments: %s\n", err->message);
+    g_error_free(err);
+    g_option_context_free(option_ctx);
     return 1;
   }
 
-  size = strlen(argv[1]) + strlen(sock_name) + 1;
-  sockpath = malloc(size);
+  sockpath = g_strconcat(opts.path, SOCK_NAME, NULL);
   if (!sockpath) {
-    fprintf(stderr, "failed to allocate sock path storage\n");
+    fprintf(stderr, "failed to concatenate repo path\n");
+    g_option_context_free(option_ctx);
     return 1;
   }
-
-  snprintf(sockpath, size, "%s%s", argv[1], sock_name);
 
   gpgrt_check_version(NULL);
   assuan_sock_init();
 
+  if (!opts.daemon && !opts.server) {
+    if (try_server(sockpath)) {
+      printf("no createrepo-agent running at %s\n", opts.path);
+    } else {
+      printf("createrepo-agent running and available at %s\n", opts.path);
+    }
+    assuan_sock_deinit();
+    g_free(sockpath);
+    g_option_context_free(option_ctx);
+    return 0;
+  }
+
   fd = create_server_socket(sockpath);
   if (fd == ASSUAN_INVALID_FD && errno == EADDRINUSE) {
-    if (try_server(argv[1])) {
+    if (try_server(sockpath)) {
       // TODO(cottsay): Better handling of redirected socket
-      remove(argv[1]);
+      remove(sockpath);
       fd = create_server_socket(sockpath);
     } else {
       errno = EADDRINUSE;
@@ -127,20 +140,40 @@ main(int argc, char * argv[])
   }
   if (fd == ASSUAN_INVALID_FD) {
     fprintf(stderr, "failed to create socket at %s: %s\n", sockpath, strerror(errno));
-    free(sockpath);
+    assuan_sock_deinit();
+    g_free(sockpath);
+    g_option_context_free(option_ctx);
     return 1;
   }
 
-  free(sockpath);
+  g_free(sockpath);
 
-  // TODO(cottsay): Fork here
+  if (opts.daemon) {
+    fflush(NULL);
+
+    pid = fork();
+    if (-1 == pid) {
+      fprintf(stderr, "failed to fork daemon process: %s", strerror(errno));
+      assuan_sock_close(fd);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return 1;
+    } else if (pid) {
+      assuan_sock_close(fd);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return 0;
+    }
+  }
 
   ignore_sigpipe();
 
-  command_handler(fd, argv[1]);
+  command_handler(fd, opts.path);
 
   assuan_sock_close(fd);
   assuan_sock_deinit();
+
+  g_option_context_free(option_ctx);
 
   return 0;
 }

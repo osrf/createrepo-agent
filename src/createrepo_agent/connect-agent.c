@@ -38,18 +38,22 @@ main(int argc, char * argv[])
   rc = assuan_new(&ctx);
   if (rc) {
     fprintf(stderr, "client context creation failed: %s\n", gpg_strerror(rc));
+    assuan_sock_deinit();
     return 1;
   }
 
   rc = connect_and_start_server(ctx, argv[1]);
   if (rc) {
     fprintf(stderr, "connection to server failed: %s\n", gpg_strerror(rc));
+    assuan_release(ctx);
+    assuan_sock_deinit();
     return 1;
   }
 
   printf("Connected to server at '%s'\n", argv[1]);
 
   assuan_release(ctx);
+  assuan_sock_deinit();
 
   return 0;
 }
