@@ -21,7 +21,7 @@ Rapidly and repeatedly generate RPM repository metadata
 - [ ] Architechture overview  
 - [ ] Troubleshooting guide/playbook  
 - [ ] API documentation  
+- [ ] Tests  
 
 ### Scenarios
-- [ ] Add a package  
 - [ ] Sync from another repository  

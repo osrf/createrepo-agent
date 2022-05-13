@@ -12,21 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <createrepo_c/createrepo_c.h>
+#include <glib.h>
 
-#include "createrepo-agent/agent_options.h"
+#include "createrepo-agent/options.h"
 
 #define POS_ARG_NAME "REPO_CLUSTER_DIR"
 
-static void
-cra_agent_options_fini(cra_AgentOptions * opts)
+static gchar *
+resolve_path(const gchar * path)
 {
+  gchar * res;
+  gchar * cwd = g_path_is_absolute(path) ? NULL : g_get_current_dir();
+  res = g_strconcat(
+    cwd ? cwd : "",
+    cwd && !g_str_has_suffix(cwd, "/") ? "/" : "",
+    path,
+    g_str_has_suffix(path, "/") ? NULL : "/",
+    NULL);
+  g_free(cwd);
+  return res;
+}
+
+static void
+cra_options_fini(cra_AgentOptions * opts)
+{
+  g_strfreev(opts->import);
+  opts->import = NULL;
   g_free(opts->path);
   opts->path = NULL;
 }
 
 static gboolean
-cra_agent_options_path_cb(
+cra_options_path_cb(
   const gchar * option_name, const gchar * value, cra_AgentOptions * opts,
   GError ** err)
 {
@@ -39,7 +56,7 @@ cra_agent_options_path_cb(
     return FALSE;
   }
 
-  opts->path = cr_normalize_dir_path(value);
+  opts->path = resolve_path(value);
 
   return TRUE;
 }
@@ -57,12 +74,17 @@ as_void(GOptionArgFunc func)
 }
 
 static gboolean
-cra_agent_options_post_hook(
+cra_options_post_hook(
   GOptionContext * context, GOptionGroup * group, cra_AgentOptions * opts,
   GError ** err)
 {
   (void)context;
   (void)group;
+
+  if (opts->import && !opts->import[0]) {
+    g_strfreev(opts->import);
+    opts->import = NULL;
+  }
 
   if (opts->path == NULL) {
     g_set_error(
@@ -71,10 +93,21 @@ cra_agent_options_post_hook(
     return FALSE;
   }
 
-  if (opts->daemon && opts->server) {
+  gboolean any_command = opts->daemon | opts->server | (NULL != opts->import);
+  gboolean one_command = opts->daemon ^ opts->server ^ (NULL != opts->import);
+  if (any_command && !one_command) {
     g_set_error(
       err, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
       "Cannot specify more than one command");
+    return FALSE;
+  }
+
+  if ((opts->invalidate_family || opts->invalidate_dependants) &&
+    !opts->import)
+  {
+    g_set_error(
+      err, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
+      "Invalidation options are only valid with --import");
     return FALSE;
   }
 
@@ -82,10 +115,10 @@ cra_agent_options_post_hook(
 }
 
 GOptionGroup *
-cra_get_agent_option_group(cra_AgentOptions * opts)
+cra_get_option_group(cra_AgentOptions * opts)
 {
   GOptionGroup * group = g_option_group_new(
-    NULL, NULL, NULL, opts, (GDestroyNotify)cra_agent_options_fini);
+    NULL, NULL, NULL, opts, (GDestroyNotify)cra_options_fini);
   if (!group) {
     return NULL;
   }
@@ -100,15 +133,28 @@ cra_get_agent_option_group(cra_AgentOptions * opts)
       "run in server mode (foreground)", NULL
     },
     {
+      "import", 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &opts->import,
+      "import packages into the repository cluster", "RPM_FILE"
+    },
+    {
+      "invalidate-family", 0, 0, G_OPTION_ARG_NONE, &opts->invalidate_family,
+      "when importing, remove existing packages related to new ones", NULL
+    },
+    {
+      "invalidate-dependants", 0, 0, G_OPTION_ARG_NONE,
+      &opts->invalidate_dependants,
+      "when importing, remove existing packages which depend on new ones", NULL
+    },
+    {
       G_OPTION_REMAINING, 0, G_OPTION_FLAG_FILENAME, G_OPTION_ARG_CALLBACK,
-      as_void((GOptionArgFunc)cra_agent_options_path_cb), NULL, POS_ARG_NAME
+      as_void((GOptionArgFunc)cra_options_path_cb), NULL, POS_ARG_NAME
     },
     {NULL},
   };
 
   g_option_group_add_entries(group, entries);
   g_option_group_set_parse_hooks(
-    group, NULL, (GOptionParseFunc)cra_agent_options_post_hook);
+    group, NULL, (GOptionParseFunc)cra_options_post_hook);
 
   return group;
 }

@@ -31,12 +31,12 @@ target_link_libraries(createrepo-cache PRIVATE
 target_compile_definitions(createrepo-cache PRIVATE
   -DG_LOG_DOMAIN="CREATEREPO_CACHE")
 
-# Server
+# Agent
 add_executable(createrepo-agent
   src/createrepo-agent/agent.c
-  src/createrepo-agent/agent_options.c
   src/createrepo-agent/client.c
-  src/createrepo-agent/command.c)
+  src/createrepo-agent/command.c
+  src/createrepo-agent/options.c)
 target_include_directories(createrepo-agent PRIVATE src)
 target_include_directories(createrepo-agent SYSTEM PRIVATE
   ${CREATEREPO_C_INCLUDE_DIRS}
@@ -52,20 +52,5 @@ target_link_libraries(createrepo-agent PRIVATE
 target_compile_definitions(createrepo-agent PRIVATE
   -DG_LOG_DOMAIN="CREATEREPO_AGENT")
 
-# Client
-add_executable(createrepo-connect-agent
-  src/createrepo-agent/client.c
-  src/createrepo-agent/connect-agent.c)
-target_include_directories(createrepo-connect-agent PRIVATE src)
-target_include_directories(createrepo-connect-agent SYSTEM PRIVATE
-  ${GLIB2_INCLUDE_DIRS}
-  ${GPG_ERROR_INCLUDE_DIRS}
-  ${LIBASSUAN_INCLUDE_DIRS})
-target_link_libraries(createrepo-connect-agent PRIVATE
-  ${GLIB2_LIBRARIES}
-  ${GPG_ERROR_LIBRARIES}
-  ${LIBASSUAN_LIBRARIES})
-
 install(TARGETS
-  createrepo-agent
-  createrepo-connect-agent)
+  createrepo-agent)

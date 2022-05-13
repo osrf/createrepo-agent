@@ -23,10 +23,8 @@ extern "C"
 #endif
 
 gpg_error_t
-connect_to_server(assuan_context_t ctx, const char * name);
-
-gpg_error_t
-connect_and_start_server(assuan_context_t ctx, const char * name);
+connect_and_start_server(
+  assuan_context_t ctx, const char * name, const char * server);
 
 #ifdef __cplusplus
 }

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef CREATEREPO_AGENT__AGENT_OPTIONS_H_
-#define CREATEREPO_AGENT__AGENT_OPTIONS_H_
+#ifndef CREATEREPO_AGENT__OPTIONS_H_
+#define CREATEREPO_AGENT__OPTIONS_H_
 
 #include <glib.h>
 
@@ -27,13 +27,16 @@ typedef struct
   gchar * path;
   gboolean daemon;
   gboolean server;
+  gchar ** import;
+  gboolean invalidate_family;
+  gboolean invalidate_dependants;
 } cra_AgentOptions;
 
 GOptionGroup *
-cra_get_agent_option_group(cra_AgentOptions * opts);
+cra_get_option_group(cra_AgentOptions * opts);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  // CREATEREPO_AGENT__AGENT_OPTIONS_H_
+#endif  // CREATEREPO_AGENT__OPTIONS_H_

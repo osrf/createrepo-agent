@@ -24,51 +24,6 @@
 #include "createrepo-agent/client.h"
 #include "createrepo-agent/common.h"
 
-static assuan_fd_t
-create_client_socket(const char * name)
-{
-  struct sockaddr_un addr_un;
-  struct sockaddr * addr = (struct sockaddr *)&addr_un;
-  assuan_fd_t fd;
-  int r_redirected;
-
-  addr_un.sun_family = AF_UNIX;
-
-  if (assuan_sock_set_sockaddr_un(name, addr, &r_redirected)) {
-    return ASSUAN_INVALID_FD;
-  }
-
-  fd = assuan_sock_new(addr_un.sun_family, SOCK_STREAM, 0);
-  if (fd == ASSUAN_INVALID_FD) {
-    return ASSUAN_INVALID_FD;
-  }
-
-  if (assuan_sock_connect(fd, addr, sizeof(addr_un))) {
-    assuan_sock_close(fd);
-    return ASSUAN_INVALID_FD;
-  }
-
-  return fd;
-}
-
-gpg_error_t
-connect_to_server(assuan_context_t ctx, const char * name)
-{
-  assuan_fd_t fd;
-  gpg_error_t rc;
-
-  fd = create_client_socket(name);
-  if (ASSUAN_INVALID_FD == fd) {
-    return gpg_err_code_from_errno(errno);
-  }
-
-  rc = assuan_socket_connect_fd(ctx, fd, 0);
-
-  assuan_sock_close(fd);
-
-  return rc;
-}
-
 gpg_error_t
 wait_and_connect_to_server(assuan_context_t ctx, const char * name, int timeout)
 {
@@ -76,7 +31,7 @@ wait_and_connect_to_server(assuan_context_t ctx, const char * name, int timeout)
   int timeout_us = timeout * 1000000;
   int current_us = 0;
 
-  while (0 != (rc = connect_to_server(ctx, name))) {
+  while (0 != (rc = assuan_socket_connect(ctx, name, ASSUAN_INVALID_PID, 0))) {
     current_us += 10000;
     if (current_us >= timeout_us) {
       return gpg_error(GPG_ERR_TIMEOUT);
@@ -88,19 +43,23 @@ wait_and_connect_to_server(assuan_context_t ctx, const char * name, int timeout)
 }
 
 gpg_error_t
-start_server(const char * name)
+start_server(const char * name, const char * server)
 {
   pid_t pid;
   gpg_error_t rc = 0;
   int i;
   int status;
 
+  if (NULL == server) {
+    server = "createrepo-agent";
+  }
+
   pid = fork();
   if ((pid_t)(-1) == pid) {
     rc = gpg_err_code_from_errno(errno);
     fprintf(stderr, "failed to fork process: %s\n", gpg_strerror(rc));
   } else if ((pid_t)(0) == pid) {
-    execlp("createrepo-agent", "createrepo-agent", name, "--daemon", NULL);
+    execlp(server, server, name, "--daemon", NULL);
     exit(127);
   }
 
@@ -120,17 +79,18 @@ start_server(const char * name)
 }
 
 gpg_error_t
-connect_and_start_server(assuan_context_t ctx, const char * name)
+connect_and_start_server(
+  assuan_context_t ctx, const char * name, const char * server)
 {
   gpg_error_t rc;
   gchar * sockname;
 
-  sockname = g_strconcat(name, "/", SOCK_NAME, NULL);
+  sockname = g_strconcat(name, SOCK_NAME, NULL);
   if (!sockname) {
     return gpg_error(GPG_ERR_ENOMEM);
   }
 
-  rc = connect_to_server(ctx, sockname);
+  rc = assuan_socket_connect(ctx, sockname, ASSUAN_INVALID_PID, 0);
   if (!rc) {
     g_free(sockname);
     return rc;
@@ -138,7 +98,7 @@ connect_and_start_server(assuan_context_t ctx, const char * name)
 
   // TODO(cottsay): Begin lock
 
-  rc = start_server(name);
+  rc = start_server(name, server);
   if (rc) {
     g_free(sockname);
     return rc;

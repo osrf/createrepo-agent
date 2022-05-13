@@ -22,10 +22,10 @@
 
 #include <glib.h>
 
-#include "createrepo-agent/agent_options.h"
 #include "createrepo-agent/client.h"
 #include "createrepo-agent/command.h"
 #include "createrepo-agent/common.h"
+#include "createrepo-agent/options.h"
 
 static gpg_error_t
 try_server(const char * name)
@@ -38,7 +38,7 @@ try_server(const char * name)
     return rc;
   }
 
-  rc = connect_to_server(ctx, name);
+  rc = assuan_socket_connect(ctx, name, ASSUAN_INVALID_PID, 0);
 
   assuan_release(ctx);
 
@@ -92,13 +92,17 @@ int
 main(int argc, char * argv[])
 {
   assuan_fd_t fd;
+  assuan_context_t ctx;
   gchar * sockpath;
   GError * err = NULL;
   cra_AgentOptions opts = {0};
   pid_t pid;
+  gpg_error_t rc;
+  size_t i;
+  gchar * cmd;
 
   GOptionContext * option_ctx = g_option_context_new(NULL);
-  g_option_context_set_main_group(option_ctx, cra_get_agent_option_group(&opts));
+  g_option_context_set_main_group(option_ctx, cra_get_option_group(&opts));
   if (!g_option_context_parse(option_ctx, &argc, &argv, &err)) {
     fprintf(stderr, "invalid arguments: %s\n", err->message);
     g_error_free(err);
@@ -106,15 +110,81 @@ main(int argc, char * argv[])
     return 1;
   }
 
+  gpgrt_check_version(NULL);
+  assuan_sock_init();
+
+  if (opts.import) {
+    rc = assuan_new(&ctx);
+    if (rc) {
+      fprintf(stderr, "client context creation failed: %s\n", gpg_strerror(rc));
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return 1;
+    }
+
+    rc = connect_and_start_server(ctx, opts.path, argv[0]);
+    if (rc) {
+      fprintf(stderr, "connection to server failed: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return 1;
+    }
+
+    if (opts.invalidate_family || opts.invalidate_dependants) {
+      fprintf(stderr, "invalidation options are not implemented\n");
+      assuan_release(ctx);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return 1;
+    }
+
+    for (i = 0; opts.import[i]; i++) {
+      cmd = g_strconcat("ADD ", opts.import[i], NULL);
+      if (!cmd) {
+        fprintf(stderr, "failed to concatenate add command\n");
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return 1;
+      }
+
+      rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
+      g_free(cmd);
+      if (rc) {
+        fprintf(
+          stderr, "package add command failed for %s: %s\n",
+          opts.import[i], gpg_strerror(rc));
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return 1;
+      }
+    }
+
+    rc = assuan_transact(ctx, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
+    if (rc) {
+      fprintf(
+        stderr, "repository commit command failed: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return 1;
+    }
+
+    assuan_release(ctx);
+    assuan_sock_deinit();
+    g_option_context_free(option_ctx);
+    return 0;
+  }
+
   sockpath = g_strconcat(opts.path, SOCK_NAME, NULL);
   if (!sockpath) {
     fprintf(stderr, "failed to concatenate repo path\n");
+    assuan_sock_deinit();
     g_option_context_free(option_ctx);
     return 1;
   }
-
-  gpgrt_check_version(NULL);
-  assuan_sock_init();
 
   if (!opts.daemon && !opts.server) {
     if (try_server(sockpath)) {
@@ -122,8 +192,8 @@ main(int argc, char * argv[])
     } else {
       printf("createrepo-agent running and available at %s\n", opts.path);
     }
-    assuan_sock_deinit();
     g_free(sockpath);
+    assuan_sock_deinit();
     g_option_context_free(option_ctx);
     return 0;
   }
@@ -140,8 +210,8 @@ main(int argc, char * argv[])
   }
   if (fd == ASSUAN_INVALID_FD) {
     fprintf(stderr, "failed to create socket at %s: %s\n", sockpath, strerror(errno));
-    assuan_sock_deinit();
     g_free(sockpath);
+    assuan_sock_deinit();
     g_option_context_free(option_ctx);
     return 1;
   }
