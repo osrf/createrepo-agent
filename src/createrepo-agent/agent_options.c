@@ -14,7 +14,7 @@
 
 #include <createrepo_c/createrepo_c.h>
 
-#include "createrepo_agent/agent_options.h"
+#include "createrepo-agent/agent_options.h"
 
 #define POS_ARG_NAME "REPO_CLUSTER_DIR"
 

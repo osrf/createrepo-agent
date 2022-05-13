@@ -15,7 +15,7 @@
 #include <createrepo_c/createrepo_c.h>
 #include <glib.h>
 
-#include "createrepo_cache/repo_cache.h"
+#include "createrepo-cache/repo_cache.h"
 
 // TODO(cottsay): Re-structure so that this circular reference isn't necessary.
 typedef struct _cra_RepoCache cra_RepoCache;

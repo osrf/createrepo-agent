@@ -20,7 +20,7 @@ extern "C"
 {
 #endif
 
-#define SOCK_NAME ".S.createrepo_agent"
+#define SOCK_NAME ".S.createrepo-agent"
 
 #ifdef __cplusplus
 }

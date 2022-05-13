@@ -21,8 +21,8 @@
 
 #include <glib.h>
 
-#include "createrepo_agent/client.h"
-#include "createrepo_agent/common.h"
+#include "createrepo-agent/client.h"
+#include "createrepo-agent/common.h"
 
 static assuan_fd_t
 create_client_socket(const char * name)

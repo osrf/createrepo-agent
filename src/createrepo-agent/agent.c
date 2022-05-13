@@ -22,10 +22,10 @@
 
 #include <glib.h>
 
-#include "createrepo_agent/agent_options.h"
-#include "createrepo_agent/client.h"
-#include "createrepo_agent/command.h"
-#include "createrepo_agent/common.h"
+#include "createrepo-agent/agent_options.h"
+#include "createrepo-agent/client.h"
+#include "createrepo-agent/command.h"
+#include "createrepo-agent/common.h"
 
 static gpg_error_t
 try_server(const char * name)

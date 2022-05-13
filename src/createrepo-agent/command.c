@@ -16,8 +16,8 @@
 #include <createrepo_c/createrepo_c.h>
 #include <string.h>
 
-#include "createrepo_agent/command.h"
-#include "createrepo_cache/coordinator.h"
+#include "createrepo-agent/command.h"
+#include "createrepo-cache/coordinator.h"
 
 struct command_context
 {

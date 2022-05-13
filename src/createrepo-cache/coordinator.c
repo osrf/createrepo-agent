@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "createrepo_cache/coordinator.h"
-#include "createrepo_cache/repo_cache.h"
+#include "createrepo-cache/coordinator.h"
+#include "createrepo-cache/repo_cache.h"
 
 typedef struct
 {

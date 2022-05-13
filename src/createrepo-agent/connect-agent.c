@@ -14,10 +14,10 @@
 
 #include <stdio.h>
 
-#include "createrepo_agent/client.h"
+#include "createrepo-agent/client.h"
 
 const char * const usage =
-  "createrepo_c_connect_agent\n"
+  "createrepo-connect-agent\n"
   "\n"
   "Usage: %s SOCKET_FILE\n";
 
