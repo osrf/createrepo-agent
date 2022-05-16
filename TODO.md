@@ -9,6 +9,7 @@ Rapidly and repeatedly generate RPM repository metadata
 - [ ] Error logging  
 - [ ] GError propagation  
 - [ ] Python API  
+- [ ] createrepo\_c directory locking
 
 ### Agent Features
 - [ ] Auto-start locking  
