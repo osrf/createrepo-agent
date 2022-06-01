@@ -54,3 +54,11 @@ target_compile_definitions(createrepo-agent PRIVATE
 
 install(TARGETS
   createrepo-agent)
+
+set(MEMORYCHECK_SUPPRESSIONS_FILE ${CMAKE_CURRENT_SOURCE_DIR}/test/valgrind.supp
+  CACHE FILEPATH "File that contains suppressions for the memory checker")
+
+include(CTest)
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

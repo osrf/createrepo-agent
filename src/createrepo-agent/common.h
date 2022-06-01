@@ -20,7 +20,12 @@ extern "C"
 {
 #endif
 
-#define SOCK_NAME ".S.createrepo-agent"
+#define CREATEREPO_AGENT_SOCK_NAME ".S.createrepo-agent"
+
+#define CRA_EXIT_SUCCESS 0
+#define CRA_EXIT_GENERAL_ERROR 1
+#define CRA_EXIT_USAGE 2
+#define CRA_EXIT_IN_USE 3
 
 #ifdef __cplusplus
 }

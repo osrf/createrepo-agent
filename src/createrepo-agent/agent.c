@@ -107,7 +107,7 @@ main(int argc, char * argv[])
     fprintf(stderr, "invalid arguments: %s\n", err->message);
     g_error_free(err);
     g_option_context_free(option_ctx);
-    return 1;
+    return CRA_EXIT_USAGE;
   }
 
   gpgrt_check_version(NULL);
@@ -119,7 +119,7 @@ main(int argc, char * argv[])
       fprintf(stderr, "client context creation failed: %s\n", gpg_strerror(rc));
       assuan_sock_deinit();
       g_option_context_free(option_ctx);
-      return 1;
+      return CRA_EXIT_GENERAL_ERROR;
     }
 
     rc = connect_and_start_server(ctx, opts.path, argv[0]);
@@ -128,7 +128,7 @@ main(int argc, char * argv[])
       assuan_release(ctx);
       assuan_sock_deinit();
       g_option_context_free(option_ctx);
-      return 1;
+      return CRA_EXIT_GENERAL_ERROR;
     }
 
     if (opts.invalidate_family || opts.invalidate_dependants) {
@@ -136,7 +136,7 @@ main(int argc, char * argv[])
       assuan_release(ctx);
       assuan_sock_deinit();
       g_option_context_free(option_ctx);
-      return 1;
+      return CRA_EXIT_GENERAL_ERROR;
     }
 
     for (i = 0; opts.import[i]; i++) {
@@ -146,7 +146,7 @@ main(int argc, char * argv[])
         assuan_release(ctx);
         assuan_sock_deinit();
         g_option_context_free(option_ctx);
-        return 1;
+        return CRA_EXIT_GENERAL_ERROR;
       }
 
       rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
@@ -158,7 +158,7 @@ main(int argc, char * argv[])
         assuan_release(ctx);
         assuan_sock_deinit();
         g_option_context_free(option_ctx);
-        return 1;
+        return CRA_EXIT_GENERAL_ERROR;
       }
     }
 
@@ -169,21 +169,21 @@ main(int argc, char * argv[])
       assuan_release(ctx);
       assuan_sock_deinit();
       g_option_context_free(option_ctx);
-      return 1;
+      return CRA_EXIT_GENERAL_ERROR;
     }
 
     assuan_release(ctx);
     assuan_sock_deinit();
     g_option_context_free(option_ctx);
-    return 0;
+    return CRA_EXIT_SUCCESS;
   }
 
-  sockpath = g_strconcat(opts.path, SOCK_NAME, NULL);
+  sockpath = g_strconcat(opts.path, CREATEREPO_AGENT_SOCK_NAME, NULL);
   if (!sockpath) {
     fprintf(stderr, "failed to concatenate repo path\n");
     assuan_sock_deinit();
     g_option_context_free(option_ctx);
-    return 1;
+    return CRA_EXIT_GENERAL_ERROR;
   }
 
   if (!opts.daemon && !opts.server) {
@@ -195,7 +195,7 @@ main(int argc, char * argv[])
     g_free(sockpath);
     assuan_sock_deinit();
     g_option_context_free(option_ctx);
-    return 0;
+    return CRA_EXIT_SUCCESS;
   }
 
   fd = create_server_socket(sockpath);
@@ -213,7 +213,7 @@ main(int argc, char * argv[])
     g_free(sockpath);
     assuan_sock_deinit();
     g_option_context_free(option_ctx);
-    return 1;
+    return errno == EADDRINUSE ? CRA_EXIT_IN_USE : CRA_EXIT_GENERAL_ERROR;
   }
 
   g_free(sockpath);
@@ -227,12 +227,12 @@ main(int argc, char * argv[])
       assuan_sock_close(fd);
       assuan_sock_deinit();
       g_option_context_free(option_ctx);
-      return 1;
+      return CRA_EXIT_GENERAL_ERROR;
     } else if (pid) {
       assuan_sock_close(fd);
       assuan_sock_deinit();
       g_option_context_free(option_ctx);
-      return 0;
+      return CRA_EXIT_SUCCESS;
     }
   }
 
@@ -245,5 +245,5 @@ main(int argc, char * argv[])
 
   g_option_context_free(option_ctx);
 
-  return 0;
+  return CRA_EXIT_SUCCESS;
 }

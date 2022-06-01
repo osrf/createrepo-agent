@@ -23,6 +23,8 @@ struct command_context
 {
   cra_Stage * stage;
   assuan_fd_t listen_fd;
+  gboolean invalidate_family;
+  gboolean invalidate_dependants;
 };
 
 static const char * const greeting = "Greetings from creatrepo_c_agent";
@@ -56,6 +58,11 @@ cmd_add(assuan_context_t ctx, char * line)
     return gpg_error(GPG_ERR_GENERAL);
   }
 
+  if (*line) {
+    *line = '\0';
+    line++;
+  }
+
   name = cr_get_filename(pkg_path);
   base = g_strndup(pkg_path, (gsize)(name - pkg_path));
   package = cr_package_from_rpm(pkg_path, CR_CHECKSUM_SHA256, name, base, -1, NULL, 0, NULL);
@@ -73,9 +80,6 @@ cmd_add(assuan_context_t ctx, char * line)
 
     return 0;
   }
-
-  *line = '\0';
-  line++;
 
   while (*line) {
     arch = line;
@@ -124,6 +128,81 @@ cmd_commit(assuan_context_t ctx, char * line)
   return 0;
 }
 
+static const char * const hlp_remove =
+  "REMOVE REGEX [ARCH ...]\n\nRemove RPM packages from the repository cluster";
+gpg_error_t
+cmd_remove(assuan_context_t ctx, char * line)
+{
+  struct command_context * cmd_ctx;
+  char * arch;
+  char * raw_pattern;
+  GRegex * pattern;
+  int rc;
+
+  cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+  if (!cmd_ctx) {
+    return gpg_error(GPG_ERR_GENERAL);
+  }
+
+  do {
+    raw_pattern = line;
+    while (*line && *line != ' ') {
+      line++;
+    }
+  } while (*line && line - raw_pattern < 2);
+
+  if (line - raw_pattern < 2) {
+    return gpg_error(GPG_ERR_GENERAL);
+  }
+
+  if (*line) {
+    *line = '\0';
+    line++;
+  }
+
+  pattern = g_regex_new(
+    raw_pattern, G_REGEX_ANCHORED | G_REGEX_OPTIMIZE, G_REGEX_MATCH_ANCHORED, NULL);
+  if (!pattern) {
+    return gpg_error(GPG_ERR_GENERAL);
+  }
+
+  if (!*line) {
+    rc = cra_stage_pattern_remove(
+      cmd_ctx->stage, NULL, pattern, cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants);
+    if (rc) {
+      g_regex_unref(pattern);
+      return gpg_error(GPG_ERR_GENERAL);
+    }
+
+    return 0;
+  }
+
+  while (*line) {
+    arch = line;
+
+    while (*line && *line != ' ') {
+      line++;
+    }
+    if (*line) {
+      *line = '\0';
+      line++;
+    }
+
+    if (line - arch > 1) {
+      rc = cra_stage_pattern_remove(
+        cmd_ctx->stage, arch, pattern, cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants);
+      if (rc) {
+        g_regex_unref(pattern);
+        return gpg_error(GPG_ERR_GENERAL);
+      }
+    }
+  }
+
+  g_regex_unref(pattern);
+
+  return 0;
+}
+
 static const char * const hlp_shutdown = "SHUTDOWN\n\nShut down the agent process";
 gpg_error_t
 cmd_shutdown(assuan_context_t ctx, char * line)
@@ -151,9 +230,31 @@ static const struct
 } command_table[] = {
   {"ADD", cmd_add, hlp_add},
   {"COMMIT", cmd_commit, hlp_commit},
+  {"REMOVE", cmd_remove, hlp_remove},
   {"SHUTDOWN", cmd_shutdown, hlp_shutdown},
   {NULL},
 };
+
+static gpg_error_t
+option_handler(assuan_context_t ctx, const char * name, const char * value)
+{
+  struct command_context * cmd_ctx;
+
+  cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+  if (!cmd_ctx) {
+    return gpg_error(GPG_ERR_GENERAL);
+  }
+
+  if (g_str_equal(name, "invalidate_family")) {
+    cmd_ctx->invalidate_family = *value ? !!atoi(value) : 0;
+  } else if (g_str_equal(name, "invalidate_dependants")) {
+    cmd_ctx->invalidate_dependants = *value ? !!atoi(value) : 0;
+  } else {
+    return gpg_error(GPG_ERR_UNKNOWN_OPTION);
+  }
+
+  return 0;
+}
 
 static gpg_error_t
 register_commands(assuan_context_t ctx)
@@ -209,16 +310,22 @@ command_handler(int fd, const char * path)
     goto release;
   }
 
-  rc = register_commands(ctx);
-  if (rc) {
-    fprintf(stderr, "register failed: %s\n", gpg_strerror(rc));
-    goto release;
-  }
-
   cmd_ctx.listen_fd = fd;
   cmd_ctx.stage = cra_stage_new(coordinator);
   if (!cmd_ctx.stage) {
     fprintf(stderr, "stage init failed\n");
+    goto release;
+  }
+
+  rc = register_commands(ctx);
+  if (rc) {
+    fprintf(stderr, "command register failed: %s\n", gpg_strerror(rc));
+    goto release;
+  }
+
+  rc = assuan_register_option_handler(ctx, option_handler);
+  if (rc) {
+    fprintf(stderr, "option register failed: %s\n", gpg_strerror(rc));
     goto release;
   }
 

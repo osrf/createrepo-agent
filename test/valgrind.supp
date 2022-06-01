@@ -1,0 +1,13 @@
+{
+   <glib_thread_pool>
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   ...
+   fun:allocate_dtv
+   fun:_dl_allocate_tls
+   ...
+   fun:pthread_create@@*
+   ...
+   fun:g_thread_pool_*
+}

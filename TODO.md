@@ -2,14 +2,12 @@
 Rapidly and repeatedly generate RPM repository metadata
 
 ### Repository and Cache Features
-- [ ] Family-based invalidation  
-- [ ] Dependency-based invalidation  
 - [ ] Import from another repository  
 - [ ] Repository metadata signing  
 - [ ] Error logging  
 - [ ] GError propagation  
 - [ ] Python API  
-- [ ] createrepo\_c directory locking
+- [ ] createrepo\_c directory locking (not currently an exposed API)
 
 ### Agent Features
 - [ ] Auto-start locking  
@@ -22,7 +20,6 @@ Rapidly and repeatedly generate RPM repository metadata
 - [ ] Architechture overview  
 - [ ] Troubleshooting guide/playbook  
 - [ ] API documentation  
-- [ ] Tests  
 
 ### Scenarios
 - [ ] Sync from another repository  

@@ -72,7 +72,11 @@ start_server(const char * name, const char * server)
     rc = gpg_error(GPG_ERR_GENERAL);
   } else if (WEXITSTATUS(status)) {
     fprintf(stderr, "server process returned %d\n", WEXITSTATUS(status));
-    rc = gpg_error(GPG_ERR_GENERAL);
+    if (WEXITSTATUS(status) == CRA_EXIT_IN_USE) {
+      rc = gpg_error(GPG_ERR_EADDRINUSE);
+    } else {
+      rc = gpg_error(GPG_ERR_GENERAL);
+    }
   }
 
   return rc;
@@ -85,7 +89,7 @@ connect_and_start_server(
   gpg_error_t rc;
   gchar * sockname;
 
-  sockname = g_strconcat(name, SOCK_NAME, NULL);
+  sockname = g_strconcat(name, CREATEREPO_AGENT_SOCK_NAME, NULL);
   if (!sockname) {
     return gpg_error(GPG_ERR_ENOMEM);
   }
@@ -97,9 +101,14 @@ connect_and_start_server(
   }
 
   // TODO(cottsay): Begin lock
+  // The bind() process could involve unlinking a stale socket file, so there
+  // is a race an agent unlinking and starting a new, connectable socket and
+  // another unlinking that new socket and starting another one.
+  // Theoretically, this unlinking and locking could be done in the binding
+  // process, but gpg-agent does it in the spawning process.
 
   rc = start_server(name, server);
-  if (rc) {
+  if (rc && gpg_err_code(rc) != GPG_ERR_EADDRINUSE) {
     g_free(sockname);
     return rc;
   }
