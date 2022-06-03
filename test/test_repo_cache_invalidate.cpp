@@ -30,8 +30,7 @@ TEST_F(repo_cache_invalidate, family) {
   ASSERT_EQ(3, g_hash_table_size(arch->arch_repo->families));
 
   // Try removing the only package
-  auto regex = create_new_regex("^package-name$");
-  EXPECT_CRE_OK(cra_cache_pattern_remove(cache.get(), "x86_64", regex.get(), TRUE, FALSE));
+  EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), "x86_64", "package-name", TRUE, FALSE));
 
   EXPECT_EQ(2, g_list_length(arch->arch_repo->packages));
   EXPECT_EQ(0, g_hash_table_size(arch->arch_repo->pending_adds));
@@ -53,8 +52,7 @@ TEST_F(repo_cache_invalidate, depends) {
   ASSERT_EQ(3, g_hash_table_size(arch->arch_repo->families));
 
   // Try removing the only package
-  auto regex = create_new_regex("^package-name$");
-  EXPECT_CRE_OK(cra_cache_pattern_remove(cache.get(), "x86_64", regex.get(), FALSE, TRUE));
+  EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), "x86_64", "package-name", FALSE, TRUE));
 
   EXPECT_EQ(2, g_list_length(arch->arch_repo->packages));
   EXPECT_EQ(0, g_hash_table_size(arch->arch_repo->pending_adds));
@@ -76,8 +74,7 @@ TEST_F(repo_cache_invalidate, family_and_depends) {
   ASSERT_EQ(3, g_hash_table_size(arch->arch_repo->families));
 
   // Try removing the only package
-  auto regex = create_new_regex("^package-name$");
-  EXPECT_CRE_OK(cra_cache_pattern_remove(cache.get(), "x86_64", regex.get(), TRUE, TRUE));
+  EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), "x86_64", "package-name", TRUE, TRUE));
 
   EXPECT_EQ(1, g_list_length(arch->arch_repo->packages));
   EXPECT_EQ(0, g_hash_table_size(arch->arch_repo->pending_adds));

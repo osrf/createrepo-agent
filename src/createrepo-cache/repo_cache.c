@@ -50,6 +50,31 @@ cra_hash_table_union(GHashTable * hash_table, GHashTable * other)
   }
 }
 
+static GHashTable *
+cra_get_or_create_nested_set(GHashTable * hash_table, const gchar * key)
+{
+  GHashTable * nested_set;
+  gchar * new_key;
+
+  nested_set = g_hash_table_lookup(hash_table, key);
+  if (!nested_set) {
+    new_key = g_strdup(key);
+    if (!new_key) {
+      return NULL;
+    }
+
+    nested_set = g_hash_table_new(NULL, NULL);
+    if (!nested_set) {
+      g_free(new_key);
+      return NULL;
+    }
+
+    g_hash_table_replace(hash_table, new_key, nested_set);
+  }
+
+  return nested_set;
+}
+
 static void
 cra_package_cache_free(cra_PackageCache * pkg)
 {
@@ -101,6 +126,7 @@ cra_repo_cache_clear(cra_RepoCache * repo)
   g_hash_table_remove_all(repo->pending_adds);
   g_hash_table_remove_all(repo->depends);
   g_hash_table_remove_all(repo->families);
+  g_hash_table_remove_all(repo->names);
   g_hash_table_remove_all(repo->hrefs);
   g_list_free_full(repo->packages, (GDestroyNotify)cra_package_cache_free);
   repo->packages = NULL;
@@ -132,6 +158,7 @@ cra_repo_cache_free(cra_RepoCache * repo)
   g_hash_table_destroy(repo->pending_adds);
   g_hash_table_destroy(repo->depends);
   g_hash_table_destroy(repo->families);
+  g_hash_table_destroy(repo->names);
   g_hash_table_destroy(repo->hrefs);
   g_free(repo->flush_task.repomd_path);
   g_free(repo->repomd_old_path);
@@ -253,6 +280,13 @@ cra_repo_cache_new(const char * path, const char * subdir)
     return NULL;
   }
 
+  repo->names = g_hash_table_new_full(
+    g_str_hash, g_str_equal, g_free, (GDestroyNotify)g_hash_table_destroy);
+  if (!repo->names) {
+    cra_repo_cache_free(repo);
+    return NULL;
+  }
+
   repo->families = g_hash_table_new_full(
     g_str_hash, g_str_equal, g_free, (GDestroyNotify)g_hash_table_destroy);
   if (!repo->families) {
@@ -364,31 +398,6 @@ cra_package_cache_worker(cra_PackageCache * pkg, void * user_data)
   pkg->chunk[CR_XMLFILE_OTHER] = cr_xml_dump_other(pkg->package, NULL);
 }
 
-static GHashTable *
-cra_family_get_or_create(cra_RepoCache * repo, const char * family_name)
-{
-  GHashTable * family;
-  gchar * key;
-
-  family = g_hash_table_lookup(repo->families, family_name);
-  if (!family) {
-    key = g_strdup(family_name);
-    if (!key) {
-      return NULL;
-    }
-
-    family = g_hash_table_new(NULL, NULL);
-    if (!family) {
-      g_free(key);
-      return NULL;
-    }
-
-    g_hash_table_replace(repo->families, key, family);
-  }
-
-  return family;
-}
-
 static void
 cra_repo_cache_package_remove(cra_RepoCache * repo, GList * node)
 {
@@ -397,6 +406,7 @@ cra_repo_cache_package_remove(cra_RepoCache * repo, GList * node)
   GSList * dnode;
   cr_Dependency * dep;
   GHashTable * dset;
+  GHashTable * names;
 
   // Steal the full path from the package object
   fullpath = pkg->path;
@@ -418,6 +428,12 @@ cra_repo_cache_package_remove(cra_RepoCache * repo, GList * node)
     g_hash_table_remove(repo->families, pkg->package->rpm_sourcerpm);
   }
 
+  if (g_hash_table_lookup_extended(repo->names, pkg->package->name, NULL, (gpointer *)&names) &&
+    g_hash_table_remove(names, node) && !g_hash_table_size(names))
+  {
+    g_hash_table_remove(repo->names, pkg->package->name);
+  }
+
   g_hash_table_remove(repo->hrefs, pkg->package->location_href);
 
   repo->packages = g_list_remove_link(repo->packages, node);
@@ -434,6 +450,7 @@ cra_repo_cache_package_add(cra_RepoCache * repo, cr_Package * package)
   GSList * dnode;
   cr_Dependency * dep;
   GHashTable * dset;
+  GHashTable * names;
   gchar * dname;
   cra_PackageCache * pkg;
 
@@ -458,8 +475,15 @@ cra_repo_cache_package_add(cra_RepoCache * repo, cr_Package * package)
 
   g_hash_table_insert(repo->hrefs, package->location_href, node);
 
+  names = cra_get_or_create_nested_set(repo->names, package->name);
+  if (!names) {
+    // TODO(cottsay): Handle rollback
+    abort();
+  }
+  g_hash_table_add(names, node);
+
   if (package->rpm_sourcerpm && '\0' != package->rpm_sourcerpm[0]) {
-    pkg->family = cra_family_get_or_create(repo, package->rpm_sourcerpm);
+    pkg->family = cra_get_or_create_nested_set(repo->families, package->rpm_sourcerpm);
     if (!pkg->family) {
       // TODO(cottsay): Handle rollback
       abort();
@@ -1023,6 +1047,46 @@ cra_cache_invalidate_and_remove(
   }
 
   return CRE_OK;
+}
+
+int
+cra_cache_name_remove(
+  cra_Cache * cache, const char * arch_name, const char * name,
+  gboolean family, gboolean dependants)
+{
+  cra_RepoCache * repo;
+  cra_ArchCache * arch = NULL;
+  GHashTable * to_remove;
+  GHashTable * names;
+  int rc;
+
+  if (!arch_name) {
+    repo = cache->source_repo;
+  } else {
+    arch = g_hash_table_lookup(cache->arches, arch_name);
+    if (!arch) {
+      return CRE_BADARG;
+    }
+    repo = arch->arch_repo;
+  }
+
+  names = g_hash_table_lookup(repo->names, name);
+  if (!names) {
+    return CRE_NOFILE;
+  }
+
+  to_remove = g_hash_table_new(NULL, NULL);
+  if (!to_remove) {
+    return CRE_MEMORY;
+  }
+
+  cra_hash_table_union(to_remove, names);
+
+  rc = cra_cache_invalidate_and_remove(cache, arch, to_remove, family, dependants);
+
+  g_hash_table_destroy(to_remove);
+
+  return rc;
 }
 
 int

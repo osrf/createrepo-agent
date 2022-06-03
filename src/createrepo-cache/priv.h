@@ -77,6 +77,7 @@ struct _cra_RepoCache
 
   // Cache tables
   GHashTable * hrefs;
+  GHashTable * names;
   GHashTable * families;
   GHashTable * depends;
 

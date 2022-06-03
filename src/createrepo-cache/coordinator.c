@@ -19,9 +19,11 @@ typedef struct
 {
   gchar * arch_name;
   cr_Package * add_package;
+  gchar * remove_name;
   GRegex * remove_pattern;
   gboolean remove_family;
   gboolean remove_dependants;
+  gboolean remove_missing_ok;
 } cra_StageOperation;
 
 struct _cra_Coordinator
@@ -49,6 +51,7 @@ cra_stage_operation_free(cra_StageOperation * op)
     g_regex_unref(op->remove_pattern);
   }
 
+  g_free(op->remove_name);
   cr_package_free(op->add_package);
   g_free(op->arch_name);
   g_free(op);
@@ -158,10 +161,22 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
     while (!rc && (op = g_queue_pop_head(stage->operations))) {
       rc = cra_cache_realize(coordinator->cache, op->arch_name);
 
+      if (!rc && op->remove_name) {
+        rc = cra_cache_name_remove(
+          coordinator->cache, op->arch_name, op->remove_name,
+          op->remove_family, op->remove_dependants);
+        if (CRE_NOFILE == rc && op->remove_missing_ok) {
+          rc = CRE_OK;
+        }
+      }
+
       if (!rc && op->remove_pattern) {
         rc = cra_cache_pattern_remove(
           coordinator->cache, op->arch_name, op->remove_pattern,
           op->remove_family, op->remove_dependants);
+        if (CRE_NOFILE == rc && op->remove_missing_ok) {
+          rc = CRE_OK;
+        }
       }
 
       if (!rc && op->add_package) {
@@ -230,9 +245,35 @@ cra_stage_package_add(cra_Stage * stage, const char * arch_name, cr_Package * pk
 }
 
 int
+cra_stage_name_remove(
+  cra_Stage * stage, const char * arch_name, const char * name,
+  gboolean family, gboolean dependants, gboolean missing_ok)
+{
+  cra_StageOperation * op;
+
+  op = cra_stage_operation_new(arch_name);
+  if (!op) {
+    return CRE_MEMORY;
+  }
+
+  op->remove_name = g_strdup(name);
+  if (!op->remove_name) {
+    cra_stage_operation_free(op);
+    return CRE_MEMORY;
+  }
+  op->remove_family = family;
+  op->remove_dependants = dependants;
+  op->remove_missing_ok = missing_ok;
+
+  g_queue_push_tail(stage->operations, op);
+
+  return CRE_OK;
+}
+
+int
 cra_stage_pattern_remove(
   cra_Stage * stage, const char * arch_name, GRegex * pattern,
-  gboolean family, gboolean dependants)
+  gboolean family, gboolean dependants, gboolean missing_ok)
 {
   cra_StageOperation * op;
 
@@ -244,6 +285,7 @@ cra_stage_pattern_remove(
   op->remove_pattern = g_regex_ref(pattern);
   op->remove_family = family;
   op->remove_dependants = dependants;
+  op->remove_missing_ok = missing_ok;
 
   g_queue_push_tail(stage->operations, op);
 

@@ -25,6 +25,7 @@ struct command_context
   assuan_fd_t listen_fd;
   gboolean invalidate_family;
   gboolean invalidate_dependants;
+  gboolean missing_ok;
 };
 
 static const char * const greeting = "Greetings from creatrepo_c_agent";
@@ -128,10 +129,76 @@ cmd_commit(assuan_context_t ctx, char * line)
   return 0;
 }
 
-static const char * const hlp_remove =
-  "REMOVE REGEX [ARCH ...]\n\nRemove RPM packages from the repository cluster";
+static const char * const hlp_remove_name =
+  "REMOVE_NAME NAME [ARCH ...]\n\nRemove RPM packages with a given name";
 gpg_error_t
-cmd_remove(assuan_context_t ctx, char * line)
+cmd_remove_name(assuan_context_t ctx, char * line)
+{
+  struct command_context * cmd_ctx;
+  char * arch;
+  char * name;
+  int rc;
+
+  cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+  if (!cmd_ctx) {
+    return gpg_error(GPG_ERR_GENERAL);
+  }
+
+  do {
+    name = line;
+    while (*line && *line != ' ') {
+      line++;
+    }
+  } while (*line && line - name < 2);
+
+  if (line - name < 2) {
+    return gpg_error(GPG_ERR_GENERAL);
+  }
+
+  if (*line) {
+    *line = '\0';
+    line++;
+  }
+
+  if (!*line) {
+    rc = cra_stage_name_remove(
+      cmd_ctx->stage, NULL, name,
+      cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
+    if (rc) {
+      return gpg_error(GPG_ERR_GENERAL);
+    }
+
+    return 0;
+  }
+
+  while (*line) {
+    arch = line;
+
+    while (*line && *line != ' ') {
+      line++;
+    }
+    if (*line) {
+      *line = '\0';
+      line++;
+    }
+
+    if (line - arch > 1) {
+      rc = cra_stage_name_remove(
+        cmd_ctx->stage, arch, name,
+        cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
+      if (rc) {
+        return gpg_error(GPG_ERR_GENERAL);
+      }
+    }
+  }
+
+  return 0;
+}
+
+static const char * const hlp_remove_pattern =
+  "REMOVE_PATTERN REGEX [ARCH ...]\n\nRemove RPM packages which match a regular expression";
+gpg_error_t
+cmd_remove_pattern(assuan_context_t ctx, char * line)
 {
   struct command_context * cmd_ctx;
   char * arch;
@@ -168,7 +235,8 @@ cmd_remove(assuan_context_t ctx, char * line)
 
   if (!*line) {
     rc = cra_stage_pattern_remove(
-      cmd_ctx->stage, NULL, pattern, cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants);
+      cmd_ctx->stage, NULL, pattern,
+      cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
     if (rc) {
       g_regex_unref(pattern);
       return gpg_error(GPG_ERR_GENERAL);
@@ -190,7 +258,8 @@ cmd_remove(assuan_context_t ctx, char * line)
 
     if (line - arch > 1) {
       rc = cra_stage_pattern_remove(
-        cmd_ctx->stage, arch, pattern, cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants);
+        cmd_ctx->stage, arch, pattern,
+        cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
       if (rc) {
         g_regex_unref(pattern);
         return gpg_error(GPG_ERR_GENERAL);
@@ -230,7 +299,8 @@ static const struct
 } command_table[] = {
   {"ADD", cmd_add, hlp_add},
   {"COMMIT", cmd_commit, hlp_commit},
-  {"REMOVE", cmd_remove, hlp_remove},
+  {"REMOVE_NAME", cmd_remove_name, hlp_remove_name},
+  {"REMOVE_PATTERN", cmd_remove_pattern, hlp_remove_pattern},
   {"SHUTDOWN", cmd_shutdown, hlp_shutdown},
   {NULL},
 };
@@ -246,9 +316,11 @@ option_handler(assuan_context_t ctx, const char * name, const char * value)
   }
 
   if (g_str_equal(name, "invalidate_family")) {
-    cmd_ctx->invalidate_family = *value ? !!atoi(value) : 0;
+    cmd_ctx->invalidate_family = *value ? !!atoi(value) : 1;
   } else if (g_str_equal(name, "invalidate_dependants")) {
-    cmd_ctx->invalidate_dependants = *value ? !!atoi(value) : 0;
+    cmd_ctx->invalidate_dependants = *value ? !!atoi(value) : 1;
+  } else if (g_str_equal(name, "missing_ok")) {
+    cmd_ctx->missing_ok = *value ? !!atoi(value) : 1;
   } else {
     return gpg_error(GPG_ERR_UNKNOWN_OPTION);
   }

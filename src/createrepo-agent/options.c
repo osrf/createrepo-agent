@@ -137,6 +137,10 @@ cra_get_option_group(cra_AgentOptions * opts)
       "import packages into the repository cluster", "RPM_FILE"
     },
     {
+      "arch", 0, 0, G_OPTION_ARG_STRING_ARRAY, &opts->arch,
+      "when importing, add packages for these architectures", "RPM_FILE"
+    },
+    {
       "invalidate-family", 0, 0, G_OPTION_ARG_NONE, &opts->invalidate_family,
       "when importing, remove existing packages related to new ones", NULL
     },

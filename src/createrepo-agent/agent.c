@@ -20,6 +20,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <createrepo_c/createrepo_c.h>
 #include <glib.h>
 
 #include "createrepo-agent/client.h"
@@ -88,6 +89,22 @@ ignore_sigpipe()
   sigaction(SIGPIPE, &sa, NULL);
 }
 
+static gpg_error_t
+set_option(assuan_context_t ctx, const char * option_name)
+{
+  gchar * cmd;
+  gpg_error_t rc;
+
+  cmd = g_strjoin(" ", "OPTION", option_name, "1", NULL);
+  if (!cmd) {
+    return gpg_error(GPG_ERR_ENOMEM);
+  }
+
+  rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
+  g_free(cmd);
+  return rc;
+}
+
 int
 main(int argc, char * argv[])
 {
@@ -100,6 +117,8 @@ main(int argc, char * argv[])
   gpg_error_t rc;
   size_t i;
   gchar * cmd;
+  gchar * arches = NULL;
+  cr_Package * pkg;
 
   GOptionContext * option_ctx = g_option_context_new(NULL);
   g_option_context_set_main_group(option_ctx, cra_get_option_group(&opts));
@@ -131,16 +150,77 @@ main(int argc, char * argv[])
       return CRA_EXIT_GENERAL_ERROR;
     }
 
-    if (opts.invalidate_family || opts.invalidate_dependants) {
-      fprintf(stderr, "invalidation options are not implemented\n");
+    if (opts.invalidate_family) {
+      rc = set_option(ctx, "invalidate_family");
+      if (rc) {
+        fprintf(stderr, "option set failed for invalidate_family: %s\n", gpg_strerror(rc));
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    if (opts.invalidate_dependants) {
+      rc = set_option(ctx, "invalidate_dependants");
+      if (rc) {
+        fprintf(stderr, "option set failed for invalidate_dependants: %s\n", gpg_strerror(rc));
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    rc = set_option(ctx, "missing_ok");
+    if (rc) {
+      fprintf(stderr, "option set failed for missing_ok: %s\n", gpg_strerror(rc));
       assuan_release(ctx);
       assuan_sock_deinit();
       g_option_context_free(option_ctx);
       return CRA_EXIT_GENERAL_ERROR;
     }
 
+    if (opts.arch && opts.arch[0]) {
+      arches = g_strjoinv(" ", opts.arch);
+    }
+
     for (i = 0; opts.import[i]; i++) {
-      cmd = g_strconcat("ADD ", opts.import[i], NULL);
+      pkg = cr_package_from_rpm_base(opts.import[i], 0, CR_HDRR_NONE, NULL);
+      if (!pkg) {
+        fprintf(stderr, "failed to parse header for %s\n", opts.import[i]);
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+
+      cmd = g_strjoin(" ", "REMOVE_NAME", pkg->name, arches, NULL);
+      if (!cmd) {
+        fprintf(stderr, "failed to concatenate removal command\n");
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+
+      rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
+      g_free(cmd);
+      if (rc) {
+        fprintf(
+          stderr, "package remove command failed for %s: %s\n",
+          opts.import[i], gpg_strerror(rc));
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+
+      cr_package_free(pkg);
+    }
+
+    for (i = 0; opts.import[i]; i++) {
+      cmd = g_strjoin(" ", "ADD", opts.import[i], arches, NULL);
       if (!cmd) {
         fprintf(stderr, "failed to concatenate add command\n");
         assuan_release(ctx);

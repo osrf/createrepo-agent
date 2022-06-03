@@ -46,9 +46,14 @@ int
 cra_stage_package_add(cra_Stage * stage, const char * arch_name, cr_Package * pkg);
 
 int
+cra_stage_name_remove(
+  cra_Stage * stage, const char * arch_name, const char * name,
+  gboolean family, gboolean dependants, gboolean missing_ok);
+
+int
 cra_stage_pattern_remove(
   cra_Stage * stage, const char * arch_name, GRegex * pattern,
-  gboolean family, gboolean dependants);
+  gboolean family, gboolean dependants, gboolean missing_ok);
 
 #ifdef __cplusplus
 }
