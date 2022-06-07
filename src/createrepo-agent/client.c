@@ -89,7 +89,7 @@ connect_and_start_server(
   gpg_error_t rc;
   gchar * sockname;
 
-  sockname = g_strconcat(name, CREATEREPO_AGENT_SOCK_NAME, NULL);
+  sockname = g_strconcat(name, CRA_SOCK_NAME, NULL);
   if (!sockname) {
     return gpg_error(GPG_ERR_ENOMEM);
   }

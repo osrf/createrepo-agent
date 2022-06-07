@@ -20,7 +20,12 @@ extern "C"
 {
 #endif
 
-#define CREATEREPO_AGENT_SOCK_NAME ".S.createrepo-agent"
+#define CRA_VERSION_MAJOR @CRA_VERSION_MAJOR@
+#define CRA_VERSION_MINOR @CRA_VERSION_MINOR@
+#define CRA_VERSION_PATCH @CRA_VERSION_PATCH@
+#define CRA_VERSION "@CRA_VERSION@"
+
+#define CRA_SOCK_NAME ".S.createrepo-agent"
 
 #define CRA_EXIT_SUCCESS 0
 #define CRA_EXIT_GENERAL_ERROR 1

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <createrepo_c/createrepo_c.h>
+#include <errno.h>
 #include <glib.h>
 
 #include "createrepo-cache/priv.h"
@@ -512,7 +513,11 @@ cra_repo_cache_package_add(cra_RepoCache * repo, cr_Package * package)
     g_hash_table_add(dset, node);
   }
 
-  repo->packages = g_list_insert_before_link(repo->packages, repo->packages, node);
+  if (repo->packages) {
+    node->next = repo->packages;
+    repo->packages->prev = node;
+  }
+  repo->packages = node;
 
   return pkg;
 }
@@ -598,7 +603,19 @@ cra_repo_cache_load(cra_RepoCache * repo)
     return rc;
   }
 
+#if CR_VERSION_MAJOR > 0 || CR_VERSION_MINOR >= 18
   repo->repomd = cr_repomd_copy(ml->repomd_data);
+#else
+  repo->repomd = cr_repomd_new();
+  if (repo->repomd) {
+    rc = cr_xml_parse_repomd(repo->repomd_path, repo->repomd, NULL, NULL, NULL);
+    if (rc) {
+      cr_metadata_free(md);
+      cr_metadatalocation_free(ml);
+      return rc;
+    }
+  }
+#endif
   cr_metadatalocation_free(ml);
   if (!repo->repomd) {
     cr_metadata_free(md);

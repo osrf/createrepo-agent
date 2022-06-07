@@ -86,19 +86,26 @@ cra_options_post_hook(
     opts->import = NULL;
   }
 
-  if (opts->path == NULL) {
-    g_set_error(
-      err, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
-      "Missing required argument " POS_ARG_NAME);
-    return FALSE;
+  if (opts->arch && !opts->arch[0]) {
+    g_strfreev(opts->arch);
+    opts->arch = NULL;
   }
 
-  gboolean any_command = opts->daemon | opts->server | (NULL != opts->import);
-  gboolean one_command = opts->daemon ^ opts->server ^ (NULL != opts->import);
-  if (any_command && !one_command) {
+  int commands = (opts->version ? 1 : 0) +
+    (opts->daemon ? 1 : 0) +
+    (opts->server ? 1 : 0) +
+    (NULL != opts->import ? 1 : 0);
+  if (commands > 1) {
     g_set_error(
       err, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
       "Cannot specify more than one command");
+    return FALSE;
+  }
+
+  if (!opts->version && opts->path == NULL) {
+    g_set_error(
+      err, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
+      "Missing required argument " POS_ARG_NAME);
     return FALSE;
   }
 
@@ -125,6 +132,10 @@ cra_get_option_group(cra_AgentOptions * opts)
 
   GOptionEntry entries[] = {
     {
+      "version", 0, 0, G_OPTION_ARG_NONE, &opts->version,
+      "show createrepo-agent version number and exit", NULL
+    },
+    {
       "daemon", 0, 0, G_OPTION_ARG_NONE, &opts->daemon,
       "run in daemon mode (background)", NULL
     },
@@ -138,7 +149,7 @@ cra_get_option_group(cra_AgentOptions * opts)
     },
     {
       "arch", 0, 0, G_OPTION_ARG_STRING_ARRAY, &opts->arch,
-      "when importing, add packages for these architectures", "RPM_FILE"
+      "when importing, add packages for these architectures", "ARCH_NAME"
     },
     {
       "invalidate-family", 0, 0, G_OPTION_ARG_NONE, &opts->invalidate_family,

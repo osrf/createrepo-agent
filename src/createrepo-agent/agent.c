@@ -129,6 +129,12 @@ main(int argc, char * argv[])
     return CRA_EXIT_USAGE;
   }
 
+  if (opts.version) {
+    printf("createrepo-agent " CRA_VERSION "\n");
+    g_option_context_free(option_ctx);
+    return CRA_EXIT_SUCCESS;
+  }
+
   gpgrt_check_version(NULL);
   assuan_sock_init();
 
@@ -258,7 +264,7 @@ main(int argc, char * argv[])
     return CRA_EXIT_SUCCESS;
   }
 
-  sockpath = g_strconcat(opts.path, CREATEREPO_AGENT_SOCK_NAME, NULL);
+  sockpath = g_strconcat(opts.path, CRA_SOCK_NAME, NULL);
   if (!sockpath) {
     fprintf(stderr, "failed to concatenate repo path\n");
     assuan_sock_deinit();

@@ -25,6 +25,7 @@ extern "C"
 typedef struct
 {
   gchar * path;
+  gboolean version;
   gboolean daemon;
   gboolean server;
   gchar ** import;

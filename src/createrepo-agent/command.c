@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "createrepo-agent/command.h"
+#include "createrepo-agent/common.h"
 #include "createrepo-cache/coordinator.h"
 
 struct command_context
@@ -28,10 +29,9 @@ struct command_context
   gboolean missing_ok;
 };
 
-static const char * const greeting = "Greetings from creatrepo_c_agent";
+static const char * const greeting = "Greetings from creatrepo-agent " CRA_VERSION;
 
-static const char * const hlp_add =
-  "ADD PACKAGE_PATH [ARCH ...]\n\nAdd an RPM package to the repository cluster";
+#define HLP_ADD "ADD PACKAGE_PATH [ARCH ...]\n\nAdd an RPM package to the repository cluster"
 gpg_error_t
 cmd_add(assuan_context_t ctx, char * line)
 {
@@ -107,7 +107,7 @@ cmd_add(assuan_context_t ctx, char * line)
   return 0;
 }
 
-static const char * const hlp_commit = "COMMIT\n\nCommit changes to all cached repository metadata";
+#define HLP_COMMIT "COMMIT\n\nCommit changes to all cached repository metadata"
 gpg_error_t
 cmd_commit(assuan_context_t ctx, char * line)
 {
@@ -129,8 +129,7 @@ cmd_commit(assuan_context_t ctx, char * line)
   return 0;
 }
 
-static const char * const hlp_remove_name =
-  "REMOVE_NAME NAME [ARCH ...]\n\nRemove RPM packages with a given name";
+#define HLP_REMOVE_NAME "REMOVE_NAME NAME [ARCH ...]\n\nRemove RPM packages with a given name"
 gpg_error_t
 cmd_remove_name(assuan_context_t ctx, char * line)
 {
@@ -195,8 +194,8 @@ cmd_remove_name(assuan_context_t ctx, char * line)
   return 0;
 }
 
-static const char * const hlp_remove_pattern =
-  "REMOVE_PATTERN REGEX [ARCH ...]\n\nRemove RPM packages which match a regular expression";
+#define HLP_REMOVE_PATTERN \
+  "REMOVE_PATTERN REGEX [ARCH ...]\n\nRemove RPM packages which match a regular expression"
 gpg_error_t
 cmd_remove_pattern(assuan_context_t ctx, char * line)
 {
@@ -272,7 +271,7 @@ cmd_remove_pattern(assuan_context_t ctx, char * line)
   return 0;
 }
 
-static const char * const hlp_shutdown = "SHUTDOWN\n\nShut down the agent process";
+#define HLP_SHUTDOWN "SHUTDOWN\n\nShut down the agent process"
 gpg_error_t
 cmd_shutdown(assuan_context_t ctx, char * line)
 {
@@ -297,11 +296,11 @@ static const struct
   const assuan_handler_t handler;
   const char * const help;
 } command_table[] = {
-  {"ADD", cmd_add, hlp_add},
-  {"COMMIT", cmd_commit, hlp_commit},
-  {"REMOVE_NAME", cmd_remove_name, hlp_remove_name},
-  {"REMOVE_PATTERN", cmd_remove_pattern, hlp_remove_pattern},
-  {"SHUTDOWN", cmd_shutdown, hlp_shutdown},
+  {"ADD", cmd_add, HLP_ADD},
+  {"COMMIT", cmd_commit, HLP_COMMIT},
+  {"REMOVE_NAME", cmd_remove_name, HLP_REMOVE_NAME},
+  {"REMOVE_PATTERN", cmd_remove_pattern, HLP_REMOVE_PATTERN},
+  {"SHUTDOWN", cmd_shutdown, HLP_SHUTDOWN},
   {NULL},
 };
 

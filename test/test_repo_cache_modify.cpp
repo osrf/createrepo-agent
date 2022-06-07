@@ -28,17 +28,17 @@ TEST_F(repo_cache_modify, add_in_place) {
   ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
   pkg.release();
 
-  EXPECT_EQ(1, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 
   // Add another package with the same name
   pkg = create_new_fake_package(temp_dir);
   ASSERT_EQ(CRE_EXISTS, cra_cache_package_add(cache.get(), NULL, pkg.get()));
 
-  EXPECT_EQ(1, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 }
 
 TEST_F(repo_cache_modify, add_with_move) {
@@ -48,17 +48,17 @@ TEST_F(repo_cache_modify, add_with_move) {
   ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
   pkg.release();
 
-  EXPECT_EQ(1, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(1, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 
   // Add another package with the same name
   pkg = create_new_fake_package(temp_dir / "stage2");
   ASSERT_EQ(CRE_EXISTS, cra_cache_package_add(cache.get(), NULL, pkg.get()));
 
-  EXPECT_EQ(1, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(1, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 }
 
 TEST_F(repo_cache_modify, add_and_remove) {
@@ -68,15 +68,15 @@ TEST_F(repo_cache_modify, add_and_remove) {
   ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
   pkg.release();
 
-  EXPECT_EQ(1, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(1, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 
   EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), NULL, "package-name", FALSE, FALSE));
 
-  EXPECT_EQ(0, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(1, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(0u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
 }
 
 TEST_F(repo_cache_modify, remove_name) {
@@ -85,23 +85,23 @@ TEST_F(repo_cache_modify, remove_name) {
   // Try removing a pattern that has no matches
   EXPECT_EQ(CRE_NOFILE, cra_cache_name_remove(cache.get(), NULL, "no-such-package", FALSE, FALSE));
 
-  EXPECT_EQ(3, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 
   // Try removing the only package
   EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), NULL, "package-name", FALSE, FALSE));
 
-  EXPECT_EQ(2, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(1, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
 
   // Try removing it again to ensure it is no longer found
   EXPECT_EQ(CRE_NOFILE, cra_cache_name_remove(cache.get(), NULL, "package-name", FALSE, FALSE));
 
-  EXPECT_EQ(2, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(1, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
 }
 
 TEST_F(repo_cache_modify, remove_pattern) {
@@ -111,23 +111,23 @@ TEST_F(repo_cache_modify, remove_pattern) {
   auto regex = create_new_regex("^no-such-package$");
   EXPECT_EQ(CRE_NOFILE, cra_cache_pattern_remove(cache.get(), NULL, regex.get(), FALSE, FALSE));
 
-  EXPECT_EQ(3, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 
   // Try removing the only package
   regex = create_new_regex("^package-name$");
   EXPECT_CRE_OK(cra_cache_pattern_remove(cache.get(), NULL, regex.get(), FALSE, FALSE));
 
-  EXPECT_EQ(2, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(1, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
 
   // Try removing it again to ensure it is no longer found
   regex = create_new_regex("^package-name$");
   EXPECT_EQ(CRE_NOFILE, cra_cache_pattern_remove(cache.get(), NULL, regex.get(), FALSE, FALSE));
 
-  EXPECT_EQ(2, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(1, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
 }

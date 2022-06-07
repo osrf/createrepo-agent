@@ -19,6 +19,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -61,7 +62,9 @@ private:
       strdup((fs::temp_directory_path() / name_template).c_str()),
       &std::free
     };
-    mkdtemp(path.get());
+    if (!mkdtemp(path.get())) {
+      throw std::system_error(errno, std::generic_category(), path.get());
+    }
     return fs::path(path.get());
   }
 };

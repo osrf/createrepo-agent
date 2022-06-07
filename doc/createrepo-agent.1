@@ -1,0 +1,34 @@
+.TH CREATEREPO-AGENT 1
+.SH NAME
+createrepo-agent - Rapidly and repeatedly generate RPM repository metadata
+.SH SYNOPSIS
+.B createrepo-agent [\fBOPTION?\fR] REPO_CLUSTER_DIR
+.SH DESCRIPTION
+\fBcreaterepo-agent\fR is a tool for rapidly iterating on clusters of associated RPM repositories. It leverages Assuan IPC to create a daemon process which caches the metadata for each sub-repository in the cluster so that it doesn't need to be re-loaded and parsed each time a change is made. The most notable implementation of the Assuan protocol is \fBgpg-agent\fR, which gives \fBcreaterepo-agent\fR its name.
+.SH COMMANDS
+.TP
+.B -h
+.TQ
+.B --help
+Show program help text.
+.TP
+.B --daemon
+Run the createrepo-agent as a detached background process.
+.TP
+.B --server
+Run the createrepo-agent as a foreground process.
+.TP
+.B --import=\fIRPM_FILE\fR
+Connect to an existing createrepo-agent process or spawn a new one, then import an RPM package into the repository cluster. May be specified multiple times.
+.SH OPTIONS
+.TP
+.B --arch=\fIARCH_NAME\fR
+When importing, add the packages specified by \fB--import\fR into the sub-repositories for these architectures. Default behavior is to import into the SRPMS sub-repository.
+.TP
+.B --invalidate-family
+When removing binary packages during import, also remove any packages from that architecture sub-repository and associated debug sub-repository which were built from the same source RPM.
+.TP
+.B --invalidate-dependants
+When removing binary packages during import, also remove any packages from that architecture sub-repository which (recursively) declare runtime dependencies on any package being removed.
+.SH SEE ALSO
+\fBcreaterepo_c\fR(8)

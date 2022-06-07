@@ -8,19 +8,19 @@ on:  # yamllint disable-line rule:truthy
 
 jobs:
   build_and_test:
-    runs-on: ubuntu-latest
-    container: fedora:latest
+    runs-on: ubuntu-22.04
     steps:
       - run: >
-          dnf install --refresh -y
+          sudo apt update && sudo apt install -y
           cmake
-          createrepo_c-devel
-          gcc-c++
-          git
-          gtest-devel
-          libassuan-devel
+          libassuan-dev
+          libcreaterepo-c-dev
+          libgpg-error-dev
+          libgtest-dev
           make
           valgrind
+        env:
+          DEBIAN_FRONTEND: noninteractive
       - uses: actions/checkout@v2
       - run: mkdir -p build
       - run: >
