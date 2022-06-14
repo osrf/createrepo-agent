@@ -14,6 +14,7 @@
 
 #include <assuan.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
@@ -319,6 +320,45 @@ main(int argc, char * argv[])
       assuan_sock_deinit();
       g_option_context_free(option_ctx);
       return CRA_EXIT_SUCCESS;
+    }
+
+    if (chdir(opts.path)) {
+      fprintf(stderr, "failed to change to repository directory: %s\n", strerror(errno));
+      assuan_sock_close(fd);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (setsid() < 0) {
+      fprintf(stderr, "failed to create new session: %s\n", strerror(errno));
+      assuan_sock_close(fd);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (close(STDIN_FILENO) || open("/dev/null", O_RDONLY) != STDIN_FILENO) {
+      fprintf(stderr, "failed to reopen STDIN as /dev/null: %s", strerror(errno));
+      assuan_sock_close(fd);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (close(STDOUT_FILENO) || open("/dev/null", O_WRONLY) != STDOUT_FILENO) {
+      fprintf(stderr, "failed to reopen STDOUT as /dev/null: %s", strerror(errno));
+      assuan_sock_close(fd);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (close(STDERR_FILENO) || open("/dev/null", O_RDWR) != STDERR_FILENO) {
+      assuan_sock_close(fd);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
     }
   }
 
