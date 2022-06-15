@@ -20,6 +20,10 @@
 #include "createrepo-agent/common.h"
 #include "createrepo-cache/coordinator.h"
 
+#define cmd_error(ctx, err, msg) \
+  assuan_process_done(ctx, assuan_set_error(ctx, gpg_error(err), msg))
+#define cmd_ok(ctx) assuan_process_done(ctx, 0)
+
 struct command_context
 {
   cra_Stage * stage;
@@ -27,6 +31,8 @@ struct command_context
   gboolean invalidate_family;
   gboolean invalidate_dependants;
   gboolean missing_ok;
+  GError * err;
+  gint * sentinel;
 };
 
 static const char * const greeting = "Greetings from creatrepo-agent " CRA_VERSION;
@@ -45,18 +51,16 @@ cmd_add(assuan_context_t ctx, char * line)
 
   cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
   if (!cmd_ctx) {
-    return gpg_error(GPG_ERR_GENERAL);
+    return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
   }
 
-  do {
-    pkg_path = line;
-    while (*line && *line != ' ') {
-      line++;
-    }
-  } while (*line && line - pkg_path < 2);
+  pkg_path = line;
+  while (*line && *line != ' ' && *line != '\t') {
+    line++;
+  }
 
-  if (line - pkg_path < 2) {
-    return gpg_error(GPG_ERR_GENERAL);
+  if (pkg_path == line) {
+    return cmd_error(ctx, GPG_ERR_MISSING_VALUE, "missing PACKAGE_PATH argument");
   }
 
   if (*line) {
@@ -66,26 +70,33 @@ cmd_add(assuan_context_t ctx, char * line)
 
   name = cr_get_filename(pkg_path);
   base = g_strndup(pkg_path, (gsize)(name - pkg_path));
-  package = cr_package_from_rpm(pkg_path, CR_CHECKSUM_SHA256, name, base, -1, NULL, 0, NULL);
+  package = cr_package_from_rpm(
+    pkg_path, CR_CHECKSUM_SHA256, name, base, -1, NULL, 0, &cmd_ctx->err);
   g_free(base);
   if (!package) {
-    return gpg_error(GPG_ERR_GENERAL);
+    if (cmd_ctx->err && cmd_ctx->err->message) {
+      return cmd_error(ctx, GPG_ERR_GENERAL, cmd_ctx->err->message);
+    }
+    return cmd_error(ctx, GPG_ERR_GENERAL, "failed to parse RPM package");
+  }
+
+  while (*line == ' ' || *line == '\t') {
+    line++;
   }
 
   if (!*line) {
     rc = cra_stage_package_add(cmd_ctx->stage, NULL, package);
     if (rc) {
       cr_package_free(package);
-      return gpg_error(GPG_ERR_GENERAL);
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
     }
 
-    return 0;
+    return cmd_ok(ctx);
   }
 
   while (*line) {
     arch = line;
-
-    while (*line && *line != ' ') {
+    while (*line && *line != ' ' && *line != '\t') {
       line++;
     }
     if (*line) {
@@ -93,18 +104,20 @@ cmd_add(assuan_context_t ctx, char * line)
       line++;
     }
 
-    if (line - arch > 1) {
-      rc = cra_stage_package_add(cmd_ctx->stage, arch, cr_package_copy(package));
-      if (rc) {
-        cr_package_free(package);
-        return gpg_error(GPG_ERR_GENERAL);
-      }
+    rc = cra_stage_package_add(cmd_ctx->stage, arch, cr_package_copy(package));
+    if (rc) {
+      cr_package_free(package);
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    while (*line == ' ' || *line == '\t') {
+      line++;
     }
   }
 
   cr_package_free(package);
 
-  return 0;
+  return cmd_ok(ctx);
 }
 
 #define HLP_COMMIT "COMMIT\n\nCommit changes to all cached repository metadata"
@@ -118,15 +131,15 @@ cmd_commit(assuan_context_t ctx, char * line)
 
   cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
   if (!cmd_ctx) {
-    return gpg_error(GPG_ERR_GENERAL);
+    return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
   }
 
   rc = cra_stage_commit(cmd_ctx->stage);
   if (rc) {
-    return gpg_error(GPG_ERR_GENERAL);
+    return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
   }
 
-  return 0;
+  return cmd_ok(ctx);
 }
 
 #define HLP_REMOVE_NAME "REMOVE_NAME NAME [ARCH ...]\n\nRemove RPM packages with a given name"
@@ -140,22 +153,24 @@ cmd_remove_name(assuan_context_t ctx, char * line)
 
   cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
   if (!cmd_ctx) {
-    return gpg_error(GPG_ERR_GENERAL);
+    return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
   }
 
-  do {
-    name = line;
-    while (*line && *line != ' ') {
-      line++;
-    }
-  } while (*line && line - name < 2);
+  name = line;
+  while (*line && *line != ' ' && *line != '\t') {
+    line++;
+  }
 
-  if (line - name < 2) {
-    return gpg_error(GPG_ERR_GENERAL);
+  if (name == line) {
+    return cmd_error(ctx, GPG_ERR_MISSING_VALUE, "missing NAME argument");
   }
 
   if (*line) {
     *line = '\0';
+    line++;
+  }
+
+  while (*line == ' ' || *line == '\t') {
     line++;
   }
 
@@ -164,16 +179,15 @@ cmd_remove_name(assuan_context_t ctx, char * line)
       cmd_ctx->stage, NULL, name,
       cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
     if (rc) {
-      return gpg_error(GPG_ERR_GENERAL);
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
     }
 
-    return 0;
+    return cmd_ok(ctx);
   }
 
   while (*line) {
     arch = line;
-
-    while (*line && *line != ' ') {
+    while (*line && *line != ' ' && *line != '\t') {
       line++;
     }
     if (*line) {
@@ -181,17 +195,19 @@ cmd_remove_name(assuan_context_t ctx, char * line)
       line++;
     }
 
-    if (line - arch > 1) {
-      rc = cra_stage_name_remove(
-        cmd_ctx->stage, arch, name,
-        cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
-      if (rc) {
-        return gpg_error(GPG_ERR_GENERAL);
-      }
+    rc = cra_stage_name_remove(
+      cmd_ctx->stage, arch, name,
+      cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
+    if (rc) {
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    while (*line == ' ' || *line == '\t') {
+      line++;
     }
   }
 
-  return 0;
+  return cmd_ok(ctx);
 }
 
 #define HLP_REMOVE_PATTERN \
@@ -207,18 +223,16 @@ cmd_remove_pattern(assuan_context_t ctx, char * line)
 
   cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
   if (!cmd_ctx) {
-    return gpg_error(GPG_ERR_GENERAL);
+    return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
   }
 
-  do {
-    raw_pattern = line;
-    while (*line && *line != ' ') {
-      line++;
-    }
-  } while (*line && line - raw_pattern < 2);
+  raw_pattern = line;
+  while (*line && *line != ' ' && *line != '\t') {
+    line++;
+  }
 
-  if (line - raw_pattern < 2) {
-    return gpg_error(GPG_ERR_GENERAL);
+  if (raw_pattern == line) {
+    return cmd_error(ctx, GPG_ERR_MISSING_VALUE, "missing REGEX argument");
   }
 
   if (*line) {
@@ -227,9 +241,16 @@ cmd_remove_pattern(assuan_context_t ctx, char * line)
   }
 
   pattern = g_regex_new(
-    raw_pattern, G_REGEX_ANCHORED | G_REGEX_OPTIMIZE, G_REGEX_MATCH_ANCHORED, NULL);
+    raw_pattern, G_REGEX_ANCHORED | G_REGEX_OPTIMIZE, G_REGEX_MATCH_ANCHORED, &cmd_ctx->err);
   if (!pattern) {
-    return gpg_error(GPG_ERR_GENERAL);
+    if (cmd_ctx->err && cmd_ctx->err->message) {
+      return cmd_error(ctx, GPG_ERR_ASS_PARAMETER, cmd_ctx->err->message);
+    }
+    return cmd_error(ctx, GPG_ERR_ASS_PARAMETER, "invalid regular expression");
+  }
+
+  while (*line == ' ' || *line == '\t') {
+    line++;
   }
 
   if (!*line) {
@@ -238,16 +259,17 @@ cmd_remove_pattern(assuan_context_t ctx, char * line)
       cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
     if (rc) {
       g_regex_unref(pattern);
-      return gpg_error(GPG_ERR_GENERAL);
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
     }
 
-    return 0;
+    g_regex_unref(pattern);
+
+    return cmd_ok(ctx);
   }
 
   while (*line) {
     arch = line;
-
-    while (*line && *line != ' ') {
+    while (*line && *line != ' ' && *line != '\t') {
       line++;
     }
     if (*line) {
@@ -255,20 +277,22 @@ cmd_remove_pattern(assuan_context_t ctx, char * line)
       line++;
     }
 
-    if (line - arch > 1) {
-      rc = cra_stage_pattern_remove(
-        cmd_ctx->stage, arch, pattern,
-        cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
-      if (rc) {
-        g_regex_unref(pattern);
-        return gpg_error(GPG_ERR_GENERAL);
-      }
+    rc = cra_stage_pattern_remove(
+      cmd_ctx->stage, arch, pattern,
+      cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants, cmd_ctx->missing_ok);
+    if (rc) {
+      g_regex_unref(pattern);
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    while (*line == ' ' || *line == '\t') {
+      line++;
     }
   }
 
   g_regex_unref(pattern);
 
-  return 0;
+  return cmd_ok(ctx);
 }
 
 #define HLP_SHUTDOWN "SHUTDOWN\n\nShut down the agent process"
@@ -281,13 +305,14 @@ cmd_shutdown(assuan_context_t ctx, char * line)
 
   cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
   if (!cmd_ctx) {
-    return gpg_error(GPG_ERR_GENERAL);
+    return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
   }
 
-  assuan_sock_close(cmd_ctx->listen_fd);
+  g_atomic_int_set(cmd_ctx->sentinel, 1);
+  shutdown(cmd_ctx->listen_fd, SHUT_RD);
   assuan_set_flag(ctx, ASSUAN_FORCE_CLOSE, 1);
 
-  return 0;
+  return cmd_ok(ctx);
 }
 
 static const struct
@@ -311,7 +336,7 @@ option_handler(assuan_context_t ctx, const char * name, const char * value)
 
   cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
   if (!cmd_ctx) {
-    return gpg_error(GPG_ERR_GENERAL);
+    return gpg_error(GPG_ERR_ASSUAN_SERVER_FAULT);
   }
 
   if (g_str_equal(name, "invalidate_family")) {
@@ -325,6 +350,20 @@ option_handler(assuan_context_t ctx, const char * name, const char * value)
   }
 
   return 0;
+}
+
+static void
+post_cmd_notify(assuan_context_t ctx, gpg_error_t err)
+{
+  (void)err;
+
+  struct command_context * cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+
+  if (cmd_ctx && cmd_ctx->err) {
+    assuan_set_error(ctx, 0, NULL);
+    g_error_free(cmd_ctx->err);
+    cmd_ctx->err = NULL;
+  }
 }
 
 static gpg_error_t
@@ -352,74 +391,142 @@ register_commands(assuan_context_t ctx)
   return 0;
 }
 
+static void
+client_worker_free(assuan_context_t ctx)
+{
+  struct command_context * cmd_ctx;
+
+  if (!ctx) {
+    return;
+  }
+
+  cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+  assuan_release(ctx);
+  if (!cmd_ctx) {
+    return;
+  }
+
+  cra_stage_free(cmd_ctx->stage);
+  free(cmd_ctx);
+}
+
+static void
+client_worker(assuan_context_t ctx, gpointer unused)
+{
+  (void)unused;
+
+  struct command_context * cmd_ctx;
+  int done = 0;
+  gpg_error_t rc;
+
+  cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+  if (cmd_ctx) {
+    while (!done && !g_atomic_int_get(cmd_ctx->sentinel)) {
+      rc = assuan_process_next(ctx, &done);
+      if (rc) {
+        break;
+      }
+    }
+  }
+
+  client_worker_free(ctx);
+}
+
 void
 command_handler(int fd, const char * path)
 {
   gpg_error_t rc;
   assuan_context_t ctx;
-  struct command_context cmd_ctx = {0};
+  struct command_context * cmd_ctx;
   cra_Coordinator * coordinator;
-
-  rc = assuan_new(&ctx);
-  if (rc) {
-    fprintf(stderr, "server context creation failed: %s\n", gpg_strerror(rc));
-    return;
-  }
-
-  assuan_set_pointer(ctx, &cmd_ctx);
+  GThreadPool * pool;
+  gint sentinel;
 
   coordinator = cra_coordinator_new(path);
   if (!coordinator) {
     rc = CRE_MEMORY;
     fprintf(stderr, "coordinator init failed\n");
-    goto release;
+    return;
   }
 
-  rc = assuan_init_socket_server(ctx, fd, 0);
-  if (rc) {
-    fprintf(stderr, "server init failed: %s\n", gpg_strerror(rc));
-    goto release;
+  pool = g_thread_pool_new((GFunc)client_worker, NULL, -1, FALSE, NULL);
+  if (!pool) {
+    fprintf(stderr, "client worker pool init failed\n");
+    cra_coordinator_free(coordinator);
+    return;
   }
 
-  cmd_ctx.listen_fd = fd;
-  cmd_ctx.stage = cra_stage_new(coordinator);
-  if (!cmd_ctx.stage) {
-    fprintf(stderr, "stage init failed\n");
-    goto release;
-  }
-
-  rc = register_commands(ctx);
-  if (rc) {
-    fprintf(stderr, "command register failed: %s\n", gpg_strerror(rc));
-    goto release;
-  }
-
-  rc = assuan_register_option_handler(ctx, option_handler);
-  if (rc) {
-    fprintf(stderr, "option register failed: %s\n", gpg_strerror(rc));
-    goto release;
-  }
-
-  for (;; ) {
-    rc = assuan_accept(ctx);
-    if (GPG_ERR_EOF == rc) {
-      break;
-    } else if (rc) {
-      fprintf(stderr, "accept problem: %s\n", gpg_strerror(rc));
-      goto release;
-    }
-
-    rc = assuan_process(ctx);
+  do {
+    rc = assuan_new(&ctx);
     if (rc) {
-      fprintf(stderr, "processing failed: %s\n", gpg_strerror(rc));
-      continue;
+      fprintf(stderr, "server context creation failed: %s\n", gpg_strerror(rc));
+      break;
     }
-  }
 
-  printf("Shutting down...\n");
+    cmd_ctx = calloc(sizeof(*cmd_ctx), 1);
+    if (!cmd_ctx) {
+      fprintf(stderr, "failed to allocate new client context\n");
+      client_worker_free(ctx);
+      break;
+    }
 
-release:
-  cra_stage_free(cmd_ctx.stage);
+    cmd_ctx->listen_fd = fd;
+    cmd_ctx->sentinel = &sentinel;
+    cmd_ctx->stage = cra_stage_new(coordinator);
+    if (!cmd_ctx->stage) {
+      client_worker_free(ctx);
+      break;
+    }
+
+    assuan_set_pointer(ctx, cmd_ctx);
+
+    rc = assuan_register_post_cmd_notify(ctx, post_cmd_notify);
+    if (rc) {
+      fprintf(stderr, "post-command notify register failed: %s\n", gpg_strerror(rc));
+      client_worker_free(ctx);
+      break;
+    }
+
+    rc = register_commands(ctx);
+    if (rc) {
+      fprintf(stderr, "command register failed: %s\n", gpg_strerror(rc));
+      client_worker_free(ctx);
+      break;
+    }
+
+    rc = assuan_register_option_handler(ctx, option_handler);
+    if (rc) {
+      fprintf(stderr, "option register failed: %s\n", gpg_strerror(rc));
+      client_worker_free(ctx);
+      break;
+    }
+
+    rc = assuan_init_socket_server(ctx, fd, 0);
+    if (rc) {
+      fprintf(stderr, "server init failed: %s\n", gpg_strerror(rc));
+      client_worker_free(ctx);
+      break;
+    }
+
+    rc = assuan_accept(ctx);
+    if (rc) {
+      if (!g_atomic_int_get(cmd_ctx->sentinel) ||
+        gpg_err_code(rc) != gpg_err_code_from_errno(EINVAL))
+      {
+        fprintf(stderr, "accept failed: %s\n", gpg_strerror(rc));
+      }
+      client_worker_free(ctx);
+      break;
+    }
+
+    if (!g_thread_pool_push(pool, ctx, NULL)) {
+      fprintf(stderr, "failed to push client task\n");
+      client_worker_free(ctx);
+      break;
+    }
+  } while (!g_atomic_int_get(&sentinel));
+
+  assuan_sock_close(fd);
+  g_thread_pool_free(pool, FALSE, TRUE);
   cra_coordinator_free(coordinator);
-  assuan_release(ctx);
 }

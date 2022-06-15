@@ -366,7 +366,6 @@ main(int argc, char * argv[])
 
   command_handler(fd, opts.path);
 
-  assuan_sock_close(fd);
   assuan_sock_deinit();
 
   g_option_context_free(option_ctx);
