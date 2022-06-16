@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.10)
 project(createrepo-agent C)
 
 set(CRA_VERSION_MAJOR 0)
-set(CRA_VERSION_MINOR 1)
+set(CRA_VERSION_MINOR 2)
 set(CRA_VERSION_PATCH 0)
 set(CRA_VERSION "${CRA_VERSION_MAJOR}.${CRA_VERSION_MINOR}.${CRA_VERSION_PATCH}")
 
