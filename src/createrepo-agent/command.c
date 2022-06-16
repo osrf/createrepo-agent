@@ -14,6 +14,7 @@
 
 #include <assuan.h>
 #include <createrepo_c/createrepo_c.h>
+#include <errno.h>
 #include <string.h>
 
 #include "createrepo-agent/command.h"
