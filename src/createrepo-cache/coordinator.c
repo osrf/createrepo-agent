@@ -154,6 +154,7 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
 {
   cra_Stage * stage;
   cra_StageOperation * op;
+  GSList * curr;
   GSList * done = NULL;
   int rc = CRE_OK;
 
@@ -183,6 +184,8 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
         rc = cra_cache_package_add(
           coordinator->cache, op->arch_name, op->add_package);
       }
+
+      cra_stage_operation_free(op);
     }
 
     done = g_slist_prepend(done, stage);
@@ -194,10 +197,12 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
     rc = cra_cache_flush(coordinator->cache);
   }
 
-  for (; NULL != done; done = g_slist_next(done)) {
-    stage = done->data;
+  for (curr = done; curr; curr = g_slist_next(curr)) {
+    stage = curr->data;
     stage->rc = rc;
   }
+
+  g_slist_free(done);
 }
 
 int
