@@ -441,7 +441,7 @@ command_handler(int fd, const char * path)
   struct command_context * cmd_ctx;
   cra_Coordinator * coordinator;
   GThreadPool * pool;
-  gint sentinel;
+  gint sentinel = 0;
 
   coordinator = cra_coordinator_new(path);
   if (!coordinator) {
@@ -475,6 +475,7 @@ command_handler(int fd, const char * path)
     cmd_ctx->sentinel = &sentinel;
     cmd_ctx->stage = cra_stage_new(coordinator);
     if (!cmd_ctx->stage) {
+      fprintf(stderr, "stage init failed\n");
       client_worker_free(ctx);
       break;
     }
