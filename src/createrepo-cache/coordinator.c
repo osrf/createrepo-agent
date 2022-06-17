@@ -183,6 +183,9 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
       if (!rc && op->add_package) {
         rc = cra_cache_package_add(
           coordinator->cache, op->arch_name, op->add_package);
+        if (!rc) {
+          op->add_package = NULL;
+        }
       }
 
       cra_stage_operation_free(op);
