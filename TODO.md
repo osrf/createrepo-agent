@@ -3,7 +3,6 @@ Rapidly and repeatedly generate RPM repository metadata
 
 ### Repository and Cache Features
 - [ ] Import from another repository  
-- [ ] Repository metadata signing  
 - [ ] Error logging  
 - [ ] GError propagation  
 - [ ] Python API  
