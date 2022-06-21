@@ -16,6 +16,7 @@ jobs:
           libassuan-dev
           libcreaterepo-c-dev
           libgpg-error-dev
+          libgpgme-dev
           libgtest-dev
           make
           valgrind

@@ -17,6 +17,7 @@
 
 #include <createrepo_c/createrepo_c.h>
 #include <glib.h>
+#include <gpgme.h>
 
 #include "createrepo-cache/repo_cache.h"
 
@@ -56,6 +57,7 @@ typedef struct
 typedef struct
 {
   gchar * repomd_path;
+  gchar * repomd_asc_path;
   cr_Repomd * repomd;
 
   cra_RepoCache * repo;
@@ -70,10 +72,12 @@ struct _cra_RepoCache
   gchar * repodata_path;
   gchar * repomd_path;
   gchar * repomd_old_path;
+  gchar * repomd_asc_path;
   GList * packages;
   cra_RepoFlags flags;
   cr_Repomd * repomd;
   cr_Repomd * repomd_old;
+  gpgme_key_t key;
 
   // Cache tables
   GHashTable * hrefs;
@@ -98,6 +102,7 @@ struct _cra_Cache
   gchar * path;
   cra_RepoCache * source_repo;
   GHashTable * arches;
+  gpgme_ctx_t gpgme;
 };
 
 cra_ArchCache *

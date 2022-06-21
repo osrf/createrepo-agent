@@ -14,7 +14,9 @@
 
 #include <createrepo_c/createrepo_c.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <glib.h>
+#include <gpgme.h>
 
 #include "createrepo-cache/priv.h"
 #include "createrepo-cache/repo_cache.h"
@@ -161,7 +163,10 @@ cra_repo_cache_free(cra_RepoCache * repo)
   g_hash_table_destroy(repo->families);
   g_hash_table_destroy(repo->names);
   g_hash_table_destroy(repo->hrefs);
+  g_free(repo->flush_task.repomd_asc_path);
   g_free(repo->flush_task.repomd_path);
+  gpgme_key_unref(repo->key);
+  g_free(repo->repomd_asc_path);
   g_free(repo->repomd_old_path);
   g_free(repo->repomd_path);
   g_free(repo->repodata_path);
@@ -212,6 +217,8 @@ cra_cache_free(cra_Cache * cache)
   }
 
   cra_cache_clear(cache);
+
+  gpgme_release(cache->gpgme);
 
   g_hash_table_destroy(cache->arches);
   cra_repo_cache_free(cache->source_repo);
@@ -268,9 +275,22 @@ cra_repo_cache_new(const char * path, const char * subdir)
     return NULL;
   }
 
+  repo->repomd_asc_path = g_strconcat(repo->repomd_path, ".asc", NULL);
+  if (!repo->repomd_asc_path) {
+    cra_repo_cache_free(repo);
+    return NULL;
+  }
+
   repo->flush_task.repo = repo;
+
   repo->flush_task.repomd_path = g_strconcat(repo->repodata_path, "repomd.new.xml", NULL);
   if (!repo->flush_task.repomd_path) {
+    cra_repo_cache_free(repo);
+    return NULL;
+  }
+
+  repo->flush_task.repomd_asc_path = g_strconcat(repo->flush_task.repomd_path, ".asc", NULL);
+  if (!repo->flush_task.repomd_asc_path) {
     cra_repo_cache_free(repo);
     return NULL;
   }
@@ -355,6 +375,7 @@ cra_Cache *
 cra_cache_new(const char * path)
 {
   cra_Cache * cache;
+  gpgme_error_t rc;
 
   cache = g_new0(cra_Cache, 1);
   if (!cache) {
@@ -379,6 +400,20 @@ cra_cache_new(const char * path)
     cra_cache_free(cache);
     return NULL;
   }
+
+  rc = gpgme_new(&cache->gpgme);
+  if (rc) {
+    cra_cache_free(cache);
+    return NULL;
+  }
+
+  rc = gpgme_set_protocol(cache->gpgme, GPGME_PROTOCOL_OpenPGP);
+  if (rc) {
+    cra_cache_free(cache);
+    return NULL;
+  }
+
+  gpgme_set_armor(cache->gpgme, 1);
 
   return cache;
 }
@@ -579,15 +614,80 @@ cra_repo_cache_populate(cra_RepoCache * repo, GHashTable * ht)
 }
 
 static int
-cra_repo_cache_load(cra_RepoCache * repo)
+cra_repo_cache_load(cra_RepoCache * repo, gpgme_ctx_t gpgme)
 {
+  (void)gpgme;
+
   int rc;
   cr_Metadata * md;
   struct cr_MetadataLocation * ml;
+  gpgme_data_t repomd_asc;
+  gpgme_data_t repomd_xml;
+  gpgme_error_t gpg_rc;
+  gpgme_verify_result_t gpg_res;
+  gpgme_signature_t gpg_sig;
+
 
   ml = cr_parse_repomd(repo->repomd_path, repo->path, 1);
   if (!ml) {
     return CRE_IO;
+  }
+
+  // TODO(cottsay): There is a small TOCTOU here. There isn't a compatible API between GPGME and
+  //                createrepo_c that would allow me to check the data which was actually used.
+  if (g_file_test(repo->repomd_asc_path, G_FILE_TEST_IS_REGULAR)) {
+    gpg_rc = gpgme_data_new_from_file(&repomd_asc, repo->repomd_asc_path, 1);
+    if (gpg_rc) {
+      cr_metadatalocation_free(ml);
+      return CRE_BADXMLREPOMD;
+    }
+
+    gpg_rc = gpgme_data_new_from_file(&repomd_xml, repo->repomd_path, 1);
+    if (gpg_rc) {
+      gpgme_data_release(repomd_asc);
+      cr_metadatalocation_free(ml);
+      return CRE_BADXMLREPOMD;
+    }
+
+    gpg_rc = gpgme_op_verify(gpgme, repomd_asc, repomd_xml, NULL);
+    gpgme_data_release(repomd_xml);
+    gpgme_data_release(repomd_asc);
+    if (gpg_rc) {
+      g_warning(
+        "Failed to verify metadata signature '%s': %s",
+        repo->repomd_asc_path, gpgme_strerror(gpg_rc));
+      cr_metadatalocation_free(ml);
+      return CRE_BADXMLREPOMD;
+    }
+
+    gpg_res = gpgme_op_verify_result(gpgme);
+    gpg_sig = gpg_res->signatures;
+    while (gpg_sig) {
+      if (!gpg_sig->status) {
+        break;
+      }
+      gpg_sig = gpg_sig->next;
+    }
+
+    if (!gpg_sig) {
+      g_warning("No signatures could be verified in '%s'", repo->repomd_asc_path);
+      cr_metadatalocation_free(ml);
+      return CRE_BADXMLREPOMD;
+    }
+
+    if (gpg_sig->key) {
+      gpgme_key_ref(gpg_sig->key);
+      repo->key = gpg_sig->key;
+    } else {
+      gpg_rc = gpgme_get_key(gpgme, gpg_sig->fpr, &repo->key, 0);
+      if (gpg_rc) {
+        // This is curious. The signature was successfully verified, but we can't find the
+        // public key that was used.
+        g_warning("Failed to find key '%s': %s", gpg_sig->fpr, gpgme_strerror(gpg_rc));
+      }
+    }
+
+    g_debug("Successfully verified '%s' with key '%s'", repo->repomd_path, gpg_sig->fpr);
   }
 
   md = cr_metadata_new(CR_HT_KEY_FILENAME, 0, NULL);
@@ -647,7 +747,7 @@ cra_repo_cache_load(cra_RepoCache * repo)
 }
 
 static int
-cra_repo_cache_realize(cra_RepoCache * repo)
+cra_repo_cache_realize(cra_RepoCache * repo, gpgme_ctx_t gpgme)
 {
   if (repo->flags & CRA_REPO_LOADED) {
     return CRE_OK;
@@ -658,7 +758,7 @@ cra_repo_cache_realize(cra_RepoCache * repo)
     return CRE_OK;
   }
 
-  return cra_repo_cache_load(repo);
+  return cra_repo_cache_load(repo, gpgme);
 }
 
 cra_ArchCache *
@@ -714,7 +814,7 @@ cra_cache_realize(cra_Cache * cache, const char * arch_name)
   int rc;
 
   if (NULL == arch_name) {
-    return cra_repo_cache_realize(cache->source_repo);
+    return cra_repo_cache_realize(cache->source_repo, cache->gpgme);
   }
 
   arch = cra_arch_cache_get_or_create(cache, arch_name);
@@ -722,12 +822,12 @@ cra_cache_realize(cra_Cache * cache, const char * arch_name)
     return CRE_MEMORY;
   }
 
-  rc = cra_repo_cache_realize(arch->arch_repo);
+  rc = cra_repo_cache_realize(arch->arch_repo, cache->gpgme);
   if (rc) {
     return rc;
   }
 
-  return cra_repo_cache_realize(arch->debug_repo);
+  return cra_repo_cache_realize(arch->debug_repo, cache->gpgme);
 }
 
 int
@@ -752,7 +852,7 @@ cra_cache_touch(cra_Cache * cache, const char * arch_name)
 }
 
 static int
-cra_repo_cache_reload(cra_RepoCache * repo)
+cra_repo_cache_reload(cra_RepoCache * repo, gpgme_ctx_t gpgme)
 {
   if (!(repo->flags & CRA_REPO_LOADED)) {
     return CRE_OK;
@@ -760,7 +860,7 @@ cra_repo_cache_reload(cra_RepoCache * repo)
 
   cra_repo_cache_clear(repo);
 
-  return cra_repo_cache_load(repo);
+  return cra_repo_cache_load(repo, gpgme);
 }
 
 int
@@ -770,19 +870,19 @@ cra_cache_reload(cra_Cache * cache)
   GHashTableIter iter;
   cra_ArchCache * arch;
 
-  rc = cra_repo_cache_reload(cache->source_repo);
+  rc = cra_repo_cache_reload(cache->source_repo, cache->gpgme);
   if (rc) {
     return rc;
   }
 
   g_hash_table_iter_init(&iter, cache->arches);
   while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&arch)) {
-    rc = cra_repo_cache_reload(arch->arch_repo);
+    rc = cra_repo_cache_reload(arch->arch_repo, cache->gpgme);
     if (rc) {
       return rc;
     }
 
-    rc = cra_repo_cache_reload(arch->debug_repo);
+    rc = cra_repo_cache_reload(arch->debug_repo, cache->gpgme);
     if (rc) {
       return rc;
     }
@@ -1250,7 +1350,7 @@ cra_xml_write_repomd(cr_Repomd * repomd, const char * path)
 }
 
 static void
-cra_repomd_flush_worker(cra_RepoFlushTask * task, void * user_data)
+cra_repomd_flush_worker(cra_RepoFlushTask * task, gpointer user_data)
 {
   (void)user_data;
 
@@ -1428,7 +1528,7 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
   char * dst;
 
   /*
-   * Step 3.1: Mark existing metadata as 'old'
+   * Step 4.1: Mark existing metadata as 'old'
    */
 
   cra_repomd_record_steal(task->repo->repomd, task->repo->repomd_old, "primary");
@@ -1452,7 +1552,7 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
   task->repomd = NULL;
 
   /*
-   * Step 3.2: Move new package files into place
+   * Step 4.2: Move new package files into place
    */
 
   g_hash_table_iter_init(&iter, task->repo->pending_adds);
@@ -1466,7 +1566,7 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
   }
 
   /*
-   * Step 3.3: Move new repomd file into place
+   * Step 4.3: Move new repomd file into place
    */
 
   if (move_file(task->repomd_path, task->repo->repomd_path)) {
@@ -1474,8 +1574,13 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
     return;
   }
 
+  if (task->repo->key && move_file(task->repomd_asc_path, task->repo->repomd_asc_path)) {
+    task->rc = CRE_IO;
+    return;
+  }
+
   /*
-   * Step 3.4: Delete removed packages
+   * Step 4.4: Delete removed packages
    */
 
   g_hash_table_iter_init(&iter, task->repo->pending_rems);
@@ -1489,7 +1594,7 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
   }
 
   /*
-   * Step 3.5: Record and delete old metadata
+   * Step 4.5: Record and delete old metadata
    *
    * We keep 1 entry of each type older than 2 minutes and discard the rest.
    */
@@ -1514,6 +1619,60 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
   }
 
   task->rc = cra_xml_write_repomd(task->repo->repomd_old, task->repo->repomd_old_path);
+}
+
+static gpg_error_t
+cra_sign_repomd(
+  gpgme_ctx_t gpgme, gpgme_key_t key, const char * repomd_path, const char * repomd_asc_path)
+{
+  FILE * f;
+  gpg_error_t rc;
+  gpgme_data_t repomd_asc;
+  gpgme_data_t repomd_xml;
+
+  rc = gpgme_signers_add(gpgme, key);
+  if (rc) {
+    return rc;
+  }
+
+  f = fopen(repomd_asc_path, "wb");
+  if (!f) {
+    rc = gpg_error(gpg_err_code_from_errno(errno));
+    g_warning("Failed to open %s: %s", repomd_asc_path, gpg_strerror(rc));
+    gpgme_signers_clear(gpgme);
+    return rc;
+  }
+
+  rc = gpgme_data_new_from_stream(&repomd_asc, f);
+  if (rc) {
+    g_warning("Failed to open repomd.xml.asc file: %s", gpgme_strerror(rc));
+    fclose(f);
+    gpgme_signers_clear(gpgme);
+    return rc;
+  }
+
+  rc = gpgme_data_new_from_file(&repomd_xml, repomd_path, 1);
+  if (rc) {
+    g_warning("Failed to open %s: %s", repomd_path, gpgme_strerror(rc));
+    gpgme_data_release(repomd_asc);
+    fclose(f);
+    gpgme_signers_clear(gpgme);
+    return rc;
+  }
+
+  rc = gpgme_op_sign(gpgme, repomd_xml, repomd_asc, GPGME_SIG_MODE_DETACH);
+  gpgme_data_release(repomd_asc);
+  gpgme_data_release(repomd_xml);
+  fclose(f);
+  gpgme_signers_clear(gpgme);
+  if (rc) {
+    g_warning("Failed to sign metadata: %s", gpgme_strerror(rc));
+    return rc;
+  }
+
+  gpgme_signers_clear(gpgme);
+
+  return 0;
 }
 
 int
@@ -1592,7 +1751,7 @@ cra_cache_flush(cra_Cache * cache)
   g_thread_pool_free(pool, FALSE, TRUE);
 
   /*
-   * !!! Sanity check: point of no return
+   * Step 3: Sanity check and signing
    */
 
   for (curr = dirty; curr; curr = g_slist_next(curr)) {
@@ -1602,11 +1761,22 @@ cra_cache_flush(cra_Cache * cache)
       g_slist_free_full(dirty, (GDestroyNotify)cra_repo_flush_task_clear);
       return rc;
     }
+    if (task->repo->key) {
+      if (cra_sign_repomd(
+          cache->gpgme, task->repo->key, task->repomd_path, task->repomd_asc_path))
+      {
+        rc = CRE_BADXMLREPOMD;
+        g_slist_free_full(dirty, (GDestroyNotify)cra_repo_flush_task_clear);
+        return rc;
+      }
+
+      g_debug("Successfully signed metadata: %s", task->repo->repomd_asc_path);
+    }
     task->rc = CRE_ERROR;
   }
 
   /*
-   * Step 3: Commit results
+   * Step 4: Commit results
    */
 
   pool = g_thread_pool_new(
@@ -1631,7 +1801,7 @@ cra_cache_flush(cra_Cache * cache)
     if (task->rc) {
       rc = task->rc;
       g_slist_free_full(dirty, (GDestroyNotify)cra_repo_flush_task_clear);
-      g_error(
+      g_warning(
         "Failed to write repository metadata to %s (%d): %s",
         task->repo->path, rc, cr_strerror(rc));
       return rc;

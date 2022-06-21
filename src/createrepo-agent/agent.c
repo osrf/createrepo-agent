@@ -23,6 +23,7 @@
 
 #include <createrepo_c/createrepo_c.h>
 #include <glib.h>
+#include <gpgme.h>
 
 #include "createrepo-agent/client.h"
 #include "createrepo-agent/command.h"
@@ -137,6 +138,7 @@ main(int argc, char * argv[])
   }
 
   gpgrt_check_version(NULL);
+  gpgme_check_version(NULL);
   assuan_sock_init();
 
   if (opts.import) {

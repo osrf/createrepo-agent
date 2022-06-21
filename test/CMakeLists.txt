@@ -8,10 +8,9 @@ endif()
 find_package(GTest REQUIRED)
 
 macro(add_cache_test NAME)
-  add_executable(test_${NAME} "test_${NAME}.cpp")
+  add_executable(test_${NAME} "main.cpp" "test_${NAME}.cpp")
   target_link_libraries(test_${NAME}
     ${GTEST_LIBRARIES}
-    ${GTEST_MAIN_LIBRARIES}
     createrepo-cache)
   add_test(${NAME} test_${NAME})
 endmacro()
