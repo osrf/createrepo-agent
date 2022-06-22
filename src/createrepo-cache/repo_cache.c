@@ -910,6 +910,7 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
   gchar * fullpath_new;
   gchar * href_old;
   gchar * href_new;
+  gchar * base_old;
 
   if (NULL == arch_name) {
     if (g_strcmp0("src", package->arch)) {
@@ -978,10 +979,14 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
   }
   g_free(href_new);
 
+  base_old = package->location_base;
+  package->location_base = NULL;
+
   chunk_primary = cr_xml_dump_primary(package, NULL);
   chunk_filelists = cr_xml_dump_filelists(package, NULL);
   chunk_other = cr_xml_dump_other(package, NULL);
   if (!chunk_primary || !chunk_filelists || !chunk_other) {
+    package->location_base = base_old;
     package->location_href = href_old;
     g_free(chunk_other);
     g_free(chunk_filelists);
@@ -993,6 +998,7 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
 
   pkg = cra_repo_cache_package_add(repo, package);
   if (!pkg) {
+    package->location_base = base_old;
     package->location_href = href_old;
     g_free(chunk_other);
     g_free(chunk_filelists);
@@ -1003,8 +1009,6 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
   }
 
   // The cache now owns the package
-
-  package->location_base = NULL;
 
   pkg->chunk[CR_XMLFILE_PRIMARY] = chunk_primary;
   pkg->chunk[CR_XMLFILE_FILELISTS] = chunk_filelists;
