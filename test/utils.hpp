@@ -23,17 +23,24 @@
 #include <utility>
 #include <vector>
 
-#include "createrepo-cache/priv.h"
+#include "createrepo-cache/coordinator.h"
 #include "createrepo-cache/repo_cache.h"
+#include "createrepo-cache/repo_cache_priv.h"
 
 #ifndef UTILS_HPP_
 #define UTILS_HPP_
 
-#define ASSERT_CRE_OK(rc) \
-  ASSERT_EQ(CRE_OK, rc) << "Operation failed: " << cr_strerror((cr_Error)rc)
+#define ASSERT_CRE_OK(op) \
+  do { \
+    cr_Error rc = (cr_Error)(op); \
+    ASSERT_EQ(CRE_OK, rc) << "Operation failed: " << cr_strerror(rc); \
+  } while (0)
 
-#define EXPECT_CRE_OK(rc) \
-  EXPECT_EQ(CRE_OK, rc) << "Operation failed: " << cr_strerror((cr_Error)rc)
+#define EXPECT_CRE_OK(op) \
+  do { \
+    cr_Error rc = (cr_Error)(op); \
+    EXPECT_EQ(CRE_OK, rc) << "Operation failed: " << cr_strerror(rc); \
+  } while (0)
 
 namespace fs = std::filesystem;
 
@@ -78,6 +85,24 @@ create_new_cache(const fs::path & path)
   };
 }
 
+inline std::unique_ptr<cra_Coordinator, decltype(& cra_coordinator_free)>
+create_new_coordinator(const fs::path & path)
+{
+  return {
+    cra_coordinator_new(path.c_str()),
+    &cra_coordinator_free
+  };
+}
+
+inline std::unique_ptr<cra_Stage, decltype(& cra_stage_free)>
+create_new_stage(cra_Coordinator * coordinator)
+{
+  return {
+    cra_stage_new(coordinator),
+    &cra_stage_free
+  };
+}
+
 std::unique_ptr<cr_Package, decltype(& cr_package_free)>
 create_new_fake_package(
   const fs::path & repo_base,
@@ -91,6 +116,7 @@ create_new_fake_package(
   auto location_base = repo_base / (arch_name.empty() ? "SRPMS" : arch_name);
   auto location_href = fs::path("Packages") / name.substr(0, 1) / pkg_file;
   auto location_full = location_base / location_href;
+  auto pkg_id = pkg_file + "~" + source_name;
 
   std::unique_ptr<cr_Package, decltype(&cr_package_free)> pkg {
     cr_package_new(),
@@ -110,7 +136,10 @@ create_new_fake_package(
     cr_Dependency * dep = cr_dependency_new();
     dep->name = g_string_chunk_insert(pkg->chunk, dep_name.c_str());
     pkg->requires = g_slist_append(pkg->requires, dep);
+    pkg_id += "~" + dep_name;
   }
+
+  pkg->pkgId = g_string_chunk_insert(pkg->chunk, pkg_id.c_str());
 
   fs::create_directories(location_full.parent_path());
   std::ofstream(location_full).close();
@@ -132,7 +161,7 @@ create_new_regex(
 
 void
 populate_cache(
-  std::unique_ptr<cra_Cache, decltype(&cra_cache_free)> & cache,
+  cra_Cache * cache,
   std::vector<std::unique_ptr<cr_Package, decltype(&cr_package_free)>> & pkgs,
   const std::string & arch_name = "",
   bool debug = false)
@@ -151,7 +180,7 @@ populate_cache(
   if (arch_name.empty()) {
     repo = cache->source_repo;
   } else {
-    cra_ArchCache * arch = cra_arch_cache_get_or_create(cache.get(), arch_name.c_str());
+    cra_ArchCache * arch = cra_arch_cache_get_or_create(cache, arch_name.c_str());
     if (!arch) {
       abort();
     }
@@ -165,42 +194,51 @@ populate_cache(
 
 void
 populate_cache(
-  std::unique_ptr<cra_Cache, decltype(&cra_cache_free)> & cache,
-  std::unique_ptr<cr_Package, decltype(&cr_package_free)> & pkg)
+  cra_Cache * cache,
+  std::unique_ptr<cr_Package, decltype(&cr_package_free)> & pkg,
+  const std::string & arch_name = "",
+  bool debug = false)
 {
   std::vector<std::unique_ptr<cr_Package, decltype(&cr_package_free)>> pkgs;
   pkgs.push_back(std::move(pkg));
 
+  populate_cache(cache, pkgs, arch_name, debug);
+}
+
+void
+populate_cache(cra_Cache * cache)
+{
+  std::vector<std::unique_ptr<cr_Package, decltype(&cr_package_free)>> pkgs;
+
+  // Source package
+  pkgs.push_back(create_new_fake_package(cache->path));
+  pkgs.push_back(create_new_fake_package(cache->path, "", "another-package"));
+  pkgs.push_back(create_new_fake_package(cache->path, "", "yet-another", "", {"another-package"}));
   populate_cache(cache, pkgs);
+  pkgs.clear();
+
+  // Binary packages
+  pkgs.push_back(create_new_fake_package(cache->path, "x86_64"));
+  pkgs.push_back(create_new_fake_package(cache->path, "x86_64", "package-name-docs"));
+  pkgs.push_back(
+    create_new_fake_package(
+      cache->path, "x86_64", "another-package", "another-package", {"package-name"}));
+  pkgs.push_back(create_new_fake_package(cache->path, "x86_64", "yet-another", "yet-another"));
+  populate_cache(cache, pkgs, "x86_64");
+  pkgs.clear();
+
+  // Debug packages
+  pkgs.push_back(create_new_fake_package(cache->path, "x86_64", "package-name-debuginfo"));
+  populate_cache(cache, pkgs, "x86_64", true);
+  pkgs.clear();
 }
 
 std::unique_ptr<cra_Cache, decltype(& cra_cache_free)>
 create_and_populate_cache(const fs::path & path)
 {
   auto cache = create_new_cache(path);
-  std::vector<std::unique_ptr<cr_Package, decltype(&cr_package_free)>> pkgs;
 
-  // Source package
-  pkgs.push_back(create_new_fake_package(path));
-  pkgs.push_back(create_new_fake_package(path, "", "another-package"));
-  pkgs.push_back(create_new_fake_package(path, "", "yet-another", "", {"another-package"}));
-  populate_cache(cache, pkgs);
-  pkgs.clear();
-
-  // Binary packages
-  pkgs.push_back(create_new_fake_package(path, "x86_64"));
-  pkgs.push_back(create_new_fake_package(path, "x86_64", "package-name-docs"));
-  pkgs.push_back(
-    create_new_fake_package(
-      path, "x86_64", "another-package", "another-package", {"package-name"}));
-  pkgs.push_back(create_new_fake_package(path, "x86_64", "yet-another", "yet-another"));
-  populate_cache(cache, pkgs, "x86_64");
-  pkgs.clear();
-
-  // Debug packages
-  pkgs.push_back(create_new_fake_package(path, "x86_64", "package-name-debuginfo"));
-  populate_cache(cache, pkgs, "x86_64", true);
-  pkgs.clear();
+  populate_cache(cache.get());
 
   return cache;
 }

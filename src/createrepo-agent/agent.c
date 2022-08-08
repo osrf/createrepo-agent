@@ -198,6 +198,7 @@ main(int argc, char * argv[])
       pkg = cr_package_from_rpm_base(opts.import[i], 0, CR_HDRR_NONE, NULL);
       if (!pkg) {
         fprintf(stderr, "failed to parse header for %s\n", opts.import[i]);
+        g_free(arches);
         assuan_release(ctx);
         assuan_sock_deinit();
         g_option_context_free(option_ctx);
@@ -207,6 +208,7 @@ main(int argc, char * argv[])
       cmd = g_strjoin(" ", "REMOVE_NAME", pkg->name, arches, NULL);
       if (!cmd) {
         fprintf(stderr, "failed to concatenate removal command\n");
+        g_free(arches);
         assuan_release(ctx);
         assuan_sock_deinit();
         g_option_context_free(option_ctx);
@@ -219,6 +221,7 @@ main(int argc, char * argv[])
         fprintf(
           stderr, "package remove command failed for %s: %s\n",
           opts.import[i], gpg_strerror(rc));
+        g_free(arches);
         assuan_release(ctx);
         assuan_sock_deinit();
         g_option_context_free(option_ctx);
@@ -232,6 +235,7 @@ main(int argc, char * argv[])
       cmd = g_strjoin(" ", "ADD", opts.import[i], arches, NULL);
       if (!cmd) {
         fprintf(stderr, "failed to concatenate add command\n");
+        g_free(arches);
         assuan_release(ctx);
         assuan_sock_deinit();
         g_option_context_free(option_ctx);
@@ -244,12 +248,15 @@ main(int argc, char * argv[])
         fprintf(
           stderr, "package add command failed for %s: %s\n",
           opts.import[i], gpg_strerror(rc));
+        g_free(arches);
         assuan_release(ctx);
         assuan_sock_deinit();
         g_option_context_free(option_ctx);
         return CRA_EXIT_GENERAL_ERROR;
       }
     }
+
+    g_free(arches);
 
     rc = assuan_transact(ctx, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
     if (rc) {

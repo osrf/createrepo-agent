@@ -13,32 +13,8 @@
 // limitations under the License.
 
 #include "createrepo-cache/coordinator.h"
+#include "createrepo-cache/coordinator_priv.h"
 #include "createrepo-cache/repo_cache.h"
-
-typedef struct
-{
-  gchar * arch_name;
-  cr_Package * add_package;
-  gchar * remove_name;
-  GRegex * remove_pattern;
-  gboolean remove_family;
-  gboolean remove_dependants;
-  gboolean remove_missing_ok;
-} cra_StageOperation;
-
-struct _cra_Coordinator
-{
-  cra_Cache * cache;
-  GAsyncQueue * pending;
-  GMutex lock;
-};
-
-struct _cra_Stage
-{
-  cra_Coordinator * coordinator;
-  GQueue * operations;
-  int rc;
-};
 
 void
 cra_stage_operation_free(cra_StageOperation * op)
@@ -209,13 +185,57 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
 }
 
 int
+cra_stage_prepare(cra_Stage * stage)
+{
+  cra_StageOperation * op;
+  GList * curr;
+  gchar * path;
+
+  for (curr = stage->operations->head; curr; curr = g_list_next(curr)) {
+    op = curr->data;
+
+    if (!g_strcmp0(op->arch_name, "SRPMS")) {
+      g_free(op->arch_name);
+      op->arch_name = NULL;
+    }
+
+    if (op->add_package) {
+      path = op->add_package->location_base;
+      if (g_str_has_prefix(path, "file:///")) {
+        path = &path[7];
+      } else if (!strstr(path, "://")) {
+        continue;
+      }
+
+      path = g_build_path(
+        G_DIR_SEPARATOR_S, path,
+        op->add_package->location_href, NULL);
+      if (!path) {
+        return CRE_MEMORY;
+      }
+      if (!g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
+        g_free(path);
+        return CRE_NOFILE;
+      }
+      g_free(path);
+    }
+  }
+
+  return CRE_OK;
+}
+
+int
 cra_stage_commit(cra_Stage * stage)
 {
-  int rc;
   cra_Coordinator * coordinator = stage->coordinator;
 
   if (g_queue_is_empty(stage->operations)) {
     return CRE_OK;
+  }
+
+  stage->rc = cra_stage_prepare(stage);
+  if (stage->rc) {
+    return stage->rc;
   }
 
   stage->rc = CRE_ASSERT;
@@ -230,9 +250,7 @@ cra_stage_commit(cra_Stage * stage)
 
   g_mutex_unlock(&coordinator->lock);
 
-  rc = stage->rc;
-
-  return rc;
+  return stage->rc;
 }
 
 int

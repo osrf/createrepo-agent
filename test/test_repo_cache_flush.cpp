@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 
 #include "createrepo-cache/repo_cache.h"
+#include "createrepo-cache/repo_cache_priv.h"
 #include "utils.hpp"
 
 class repo_cache_flush : public TempDir {};
@@ -35,13 +36,13 @@ TEST_F(repo_cache_flush, ephemeral_repo) {
 TEST_F(repo_cache_flush, empty_repo) {
   auto cache = create_new_cache(temp_dir);
 
-  EXPECT_CRE_OK(cra_cache_touch(cache.get(), NULL));
+  cache->source_repo->flags = (cra_RepoFlags)(cache->source_repo->flags | CRA_REPO_DIRTY);
   EXPECT_CRE_OK(cra_cache_flush(cache.get()));
 }
 
 TEST_F(repo_cache_flush, single_pkg) {
   auto cache = create_and_populate_cache(temp_dir);
 
-  EXPECT_CRE_OK(cra_cache_touch(cache.get(), NULL));
+  cache->source_repo->flags = (cra_RepoFlags)(cache->source_repo->flags | CRA_REPO_DIRTY);
   EXPECT_CRE_OK(cra_cache_flush(cache.get()));
 }

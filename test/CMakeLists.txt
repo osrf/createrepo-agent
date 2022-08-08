@@ -12,9 +12,13 @@ macro(add_cache_test NAME)
   target_link_libraries(test_${NAME}
     ${GTEST_LIBRARIES}
     createrepo-cache)
-  add_test(${NAME} test_${NAME})
+  add_test(NAME ${NAME} COMMAND test_${NAME})
 endmacro()
+
+add_test(NAME agent_help COMMAND createrepo-agent --help)
+add_test(NAME agent_version COMMAND createrepo-agent --version)
 
 add_cache_test(repo_cache_flush)
 add_cache_test(repo_cache_modify)
 add_cache_test(repo_cache_invalidate)
+add_cache_test(coordinator)

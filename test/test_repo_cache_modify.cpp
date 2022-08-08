@@ -15,8 +15,8 @@
 #include <glib.h>
 #include <gtest/gtest.h>
 
-#include "createrepo-cache/priv.h"
 #include "createrepo-cache/repo_cache.h"
+#include "createrepo-cache/repo_cache_priv.h"
 #include "utils.hpp"
 
 class repo_cache_modify : public TempDir {};
@@ -76,7 +76,7 @@ TEST_F(repo_cache_modify, add_and_remove) {
 
   EXPECT_EQ(0u, g_list_length(cache->source_repo->packages));
   EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 }
 
 TEST_F(repo_cache_modify, remove_name) {
@@ -89,7 +89,7 @@ TEST_F(repo_cache_modify, remove_name) {
   EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
   EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 
-  // Try removing the only package
+  // Try removing one package
   EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), NULL, "package-name", FALSE, FALSE));
 
   EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
@@ -115,7 +115,7 @@ TEST_F(repo_cache_modify, remove_pattern) {
   EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
   EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
 
-  // Try removing the only package
+  // Try removing one package
   regex = create_new_regex("^package-name$");
   EXPECT_CRE_OK(cra_cache_pattern_remove(cache.get(), NULL, regex.get(), FALSE, FALSE));
 
@@ -130,4 +130,102 @@ TEST_F(repo_cache_modify, remove_pattern) {
   EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
   EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
   EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
+}
+
+TEST_F(repo_cache_modify, remove_and_add_similar) {
+  auto cache = create_and_populate_cache(temp_dir);
+
+  // Try removing one package
+  EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), NULL, "package-name", FALSE, FALSE));
+
+  EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
+
+  // Re-add a nearly identical package
+  auto pkg = create_new_fake_package(
+    temp_dir / "stage", "", "package-name", "package-name", {"something-different"});
+  EXPECT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  pkg.release();
+
+  EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
+}
+
+TEST_F(repo_cache_modify, remove_and_add_identical) {
+  auto cache = create_and_populate_cache(temp_dir);
+
+  // Try removing one package
+  EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), NULL, "package-name", FALSE, FALSE));
+
+  EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
+
+  // Re-add the exact same package
+  auto pkg = create_new_fake_package(temp_dir / "stage");
+  EXPECT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  pkg.release();
+
+  EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
+}
+
+TEST_F(repo_cache_modify, remove_and_populate_similar) {
+  auto cache = create_and_populate_cache(temp_dir);
+
+  // Try removing one package
+  EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), NULL, "package-name", FALSE, FALSE));
+
+  EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
+
+  // Re-add a nearly identical package
+  std::unique_ptr<GHashTable, decltype(&g_hash_table_unref)> ht {
+    g_hash_table_new_full(NULL, NULL, NULL, (GDestroyNotify)cr_package_free),
+    &g_hash_table_unref
+  };
+  g_hash_table_add(
+    ht.get(),
+    create_new_fake_package(
+      temp_dir / "stage",
+      "",
+      "package-name",
+      "package-name",
+      {"something-different"}).release());
+  EXPECT_CRE_OK(cra_repo_cache_populate(cache->source_repo, ht.get()));
+
+  EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(0u, g_hash_table_size(ht.get()));
+}
+
+TEST_F(repo_cache_modify, remove_and_populate_identical) {
+  auto cache = create_and_populate_cache(temp_dir);
+
+  // Try removing one package
+  EXPECT_CRE_OK(cra_cache_name_remove(cache.get(), NULL, "package-name", FALSE, FALSE));
+
+  EXPECT_EQ(2u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
+
+  // Re-add the exact same package
+  std::unique_ptr<GHashTable, decltype(&g_hash_table_unref)> ht {
+    g_hash_table_new_full(NULL, NULL, NULL, (GDestroyNotify)cr_package_free),
+    &g_hash_table_unref
+  };
+  g_hash_table_add(
+    ht.get(),
+    create_new_fake_package(temp_dir / "stage").release());
+  EXPECT_CRE_OK(cra_repo_cache_populate(cache->source_repo, ht.get()));
+
+  EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(0u, g_hash_table_size(ht.get()));
 }

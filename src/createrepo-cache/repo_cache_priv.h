@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef CREATEREPO_CACHE__PRIV_H_
-#define CREATEREPO_CACHE__PRIV_H_
+#ifndef CREATEREPO_CACHE__REPO_CACHE_PRIV_H_
+#define CREATEREPO_CACHE__REPO_CACHE_PRIV_H_
 
 #include <createrepo_c/createrepo_c.h>
 #include <glib.h>
@@ -115,4 +115,4 @@ cra_repo_cache_populate(cra_RepoCache * repo, GHashTable * ht);
 }
 #endif
 
-#endif  // CREATEREPO_CACHE__PRIV_H_
+#endif  // CREATEREPO_CACHE__REPO_CACHE_PRIV_H_

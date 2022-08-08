@@ -44,12 +44,6 @@ int
 cra_cache_realize(cra_Cache * cache, const char * arch_name);
 
 int
-cra_cache_touch(cra_Cache * cache, const char * arch_name);
-
-int
-cra_cache_reload(cra_Cache * cache);
-
-int
 cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * package);
 
 int

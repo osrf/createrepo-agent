@@ -15,8 +15,8 @@
 #include <glib.h>
 #include <gtest/gtest.h>
 
-#include "createrepo-cache/priv.h"
 #include "createrepo-cache/repo_cache.h"
+#include "createrepo-cache/repo_cache_priv.h"
 #include "utils.hpp"
 
 class repo_cache_invalidate : public TempDir {};

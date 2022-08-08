@@ -36,6 +36,7 @@ resolve_path(const gchar * path)
 static void
 cra_options_fini(cra_AgentOptions * opts)
 {
+  g_strfreev(opts->arch);
   g_strfreev(opts->import);
   opts->import = NULL;
   g_free(opts->path);
