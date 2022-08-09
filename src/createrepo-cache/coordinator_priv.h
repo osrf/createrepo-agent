@@ -30,6 +30,7 @@ typedef struct
 {
   gchar * arch_name;
   cr_Package * add_package;
+  GHashTable * add_packages;
   gchar * remove_name;
   GRegex * remove_pattern;
   gboolean remove_family;

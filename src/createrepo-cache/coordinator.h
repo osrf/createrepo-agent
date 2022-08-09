@@ -43,7 +43,10 @@ int
 cra_stage_commit(cra_Stage * stage);
 
 int
-cra_stage_package_add(cra_Stage * stage, const char * arch_name, cr_Package * pkg);
+cra_stage_package_add(cra_Stage * stage, const char * arch_name, cr_Package * package);
+
+int
+cra_stage_packages_add(cra_Stage * stage, const char * arch_name, GHashTable * packages);
 
 int
 cra_stage_name_remove(

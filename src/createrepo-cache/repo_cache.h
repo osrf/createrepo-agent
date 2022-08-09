@@ -47,6 +47,9 @@ int
 cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * package);
 
 int
+cra_cache_packages_add(cra_Cache * cache, const char * arch_name, GHashTable * packages);
+
+int
 cra_cache_name_remove(
   cra_Cache * cache, const char * arch_name, const char * name,
   gboolean family, gboolean dependants);

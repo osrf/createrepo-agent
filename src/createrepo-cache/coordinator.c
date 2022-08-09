@@ -28,6 +28,11 @@ cra_stage_operation_free(cra_StageOperation * op)
   }
 
   g_free(op->remove_name);
+
+  if (op->add_packages) {
+    g_hash_table_destroy(op->add_packages);
+  }
+
   cr_package_free(op->add_package);
   g_free(op->arch_name);
   g_free(op);
@@ -156,6 +161,15 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
         }
       }
 
+      if (!rc && op->add_packages) {
+        rc = cra_cache_packages_add(
+          coordinator->cache, op->arch_name, op->add_packages);
+        if (!rc) {
+          g_hash_table_destroy(op->add_packages);
+          op->add_packages = NULL;
+        }
+      }
+
       if (!rc && op->add_package) {
         rc = cra_cache_package_add(
           coordinator->cache, op->arch_name, op->add_package);
@@ -184,12 +198,42 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
   g_slist_free(done);
 }
 
+static int
+cra_stage_prepare_package(cr_Package * package)
+{
+  gchar * path;
+
+  path = package->location_base;
+  if (g_str_has_prefix(path, "file:///")) {
+    path = &path[7];
+  } else if (strstr(path, "://")) {
+    return CRE_OK;
+  }
+
+  path = g_build_path(
+    G_DIR_SEPARATOR_S, path, package->location_href, NULL);
+  if (!path) {
+    return CRE_MEMORY;
+  }
+
+  if (!g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
+    g_free(path);
+    return CRE_NOFILE;
+  }
+
+  g_free(path);
+
+  return CRE_OK;
+}
+
 int
 cra_stage_prepare(cra_Stage * stage)
 {
   cra_StageOperation * op;
+  cr_Package * package;
   GList * curr;
-  gchar * path;
+  GHashTableIter iter;
+  int rc;
 
   for (curr = stage->operations->head; curr; curr = g_list_next(curr)) {
     op = curr->data;
@@ -200,24 +244,20 @@ cra_stage_prepare(cra_Stage * stage)
     }
 
     if (op->add_package) {
-      path = op->add_package->location_base;
-      if (g_str_has_prefix(path, "file:///")) {
-        path = &path[7];
-      } else if (!strstr(path, "://")) {
-        continue;
+      rc = cra_stage_prepare_package(op->add_package);
+      if (rc) {
+        return rc;
       }
+    }
 
-      path = g_build_path(
-        G_DIR_SEPARATOR_S, path,
-        op->add_package->location_href, NULL);
-      if (!path) {
-        return CRE_MEMORY;
+    if (op->add_packages) {
+      g_hash_table_iter_init(&iter, op->add_packages);
+      while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
+        rc = cra_stage_prepare_package(package);
+        if (rc) {
+          return rc;
+        }
       }
-      if (!g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
-        g_free(path);
-        return CRE_NOFILE;
-      }
-      g_free(path);
     }
   }
 
@@ -254,7 +294,7 @@ cra_stage_commit(cra_Stage * stage)
 }
 
 int
-cra_stage_package_add(cra_Stage * stage, const char * arch_name, cr_Package * pkg)
+cra_stage_package_add(cra_Stage * stage, const char * arch_name, cr_Package * package)
 {
   cra_StageOperation * op;
 
@@ -263,7 +303,37 @@ cra_stage_package_add(cra_Stage * stage, const char * arch_name, cr_Package * pk
     return CRE_MEMORY;
   }
 
-  op->add_package = pkg;
+  op->add_package = package;
+
+  g_queue_push_tail(stage->operations, op);
+
+  return CRE_OK;
+}
+
+int
+cra_stage_packages_add(cra_Stage * stage, const char * arch_name, GHashTable * packages)
+{
+  cra_StageOperation * op;
+  GHashTableIter iter;
+  gpointer key;
+  gpointer val;
+
+  op = cra_stage_operation_new(arch_name);
+  if (!op) {
+    return CRE_MEMORY;
+  }
+
+  op->add_packages = g_hash_table_new_full(NULL, NULL, NULL, (GDestroyNotify)cr_package_free);
+  if (!op->add_packages) {
+    cra_stage_operation_free(op);
+    return CRE_MEMORY;
+  }
+
+  g_hash_table_iter_init(&iter, packages);
+  while (g_hash_table_iter_next(&iter, &key, &val)) {
+    g_hash_table_insert(op->add_packages, key, val);
+  }
+  g_hash_table_steal_all(packages);
 
   g_queue_push_tail(stage->operations, op);
 
