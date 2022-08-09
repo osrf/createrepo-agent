@@ -36,7 +36,9 @@ resolve_path(const gchar * path)
 static void
 cra_options_fini(cra_AgentOptions * opts)
 {
+  g_free(opts->sync_pattern);
   g_strfreev(opts->arch);
+  g_free(opts->sync);
   g_strfreev(opts->import);
   opts->import = NULL;
   g_free(opts->path);
@@ -95,7 +97,8 @@ cra_options_post_hook(
   int commands = (opts->version ? 1 : 0) +
     (opts->daemon ? 1 : 0) +
     (opts->server ? 1 : 0) +
-    (NULL != opts->import ? 1 : 0);
+    (NULL != opts->import ? 1 : 0) +
+    (NULL != opts->sync ? 1 : 0);
   if (commands > 1) {
     g_set_error(
       err, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
@@ -111,11 +114,18 @@ cra_options_post_hook(
   }
 
   if ((opts->invalidate_family || opts->invalidate_dependants) &&
-    !opts->import)
+    !(opts->import || opts->sync))
   {
     g_set_error(
       err, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
       "Invalidation options are only valid with --import");
+    return FALSE;
+  }
+
+  if (NULL != opts->sync_pattern && !opts->sync) {
+    g_set_error(
+      err, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
+      "Sync options are only valid with --sync");
     return FALSE;
   }
 
@@ -149,6 +159,10 @@ cra_get_option_group(cra_AgentOptions * opts)
       "import packages into the repository cluster", "RPM_FILE"
     },
     {
+      "sync", 0, 0, G_OPTION_ARG_STRING, &opts->sync,
+      "import packages from another RPM repository", "BASE_URL"
+    },
+    {
       "arch", 0, 0, G_OPTION_ARG_STRING_ARRAY, &opts->arch,
       "when importing, add packages for these architectures", "ARCH_NAME"
     },
@@ -160,6 +174,10 @@ cra_get_option_group(cra_AgentOptions * opts)
       "invalidate-dependants", 0, 0, G_OPTION_ARG_NONE,
       &opts->invalidate_dependants,
       "when importing, remove existing packages which depend on new ones", NULL
+    },
+    {
+      "sync-pattern", 0, 0, G_OPTION_ARG_STRING, &opts->sync_pattern,
+      "when syncing, add and remove only packages which match this pattern", "REGEX"
     },
     {
       G_OPTION_REMAINING, 0, G_OPTION_FLAG_FILENAME, G_OPTION_ARG_CALLBACK,

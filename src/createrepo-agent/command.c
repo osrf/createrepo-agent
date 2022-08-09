@@ -316,6 +316,346 @@ cmd_shutdown(assuan_context_t ctx, char * line)
   return cmd_ok(ctx);
 }
 
+static int
+do_sync(
+  cra_Stage * stage, const char * base_url, const char * arch_name, GRegex * pattern,
+  gboolean invalidate_family, gboolean invalidate_dependants)
+{
+  cr_Metadata * md;
+  cr_Metadata * md_debug = NULL;
+  cr_Package * package;
+  GHashTable * packages;
+  GHashTable * packages_debug = NULL;
+  GHashTable * packages_source;
+  GHashTableIter iter;
+  GString * url;
+  GError * err = NULL;
+  int rc;
+
+  md = cr_metadata_new(CR_HT_KEY_FILENAME, 0, NULL);
+  if (!md) {
+    return CRE_MEMORY;
+  }
+
+  url = g_string_new(base_url);
+  if (!url) {
+    cr_metadata_free(md);
+    return CRE_MEMORY;
+  }
+  if (url->len && url->str[url->len - 1] != '/') {
+    g_string_append(url, "/");
+  }
+
+  if (!g_string_replace(url, "$basearch", arch_name ? arch_name : "SRPMS", 0)) {
+    g_string_append(url, arch_name ? arch_name : "SRPMS");
+    g_string_append(url, "/");
+  }
+
+  rc = cr_metadata_locate_and_load_xml(md, url->str, NULL);
+  if (rc) {
+    g_string_free(url, TRUE);
+    cr_metadata_free(md);
+    return rc;
+  }
+
+  packages = cr_metadata_hashtable(md);
+
+  if (pattern) {
+    g_hash_table_iter_init(&iter, packages);
+    while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
+      if (!g_regex_match(pattern, package->name, 0, NULL)) {
+        g_hash_table_iter_remove(&iter);
+      }
+    }
+  }
+
+  if (!g_hash_table_size(packages)) {
+    g_string_free(url, TRUE);
+    cr_metadata_free(md);
+    return CRE_OK;
+  }
+
+  g_hash_table_iter_init(&iter, packages);
+  while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
+    package->location_base = g_string_chunk_insert(package->chunk, url->str);
+  }
+
+  // Look for a debug sub-repository
+  if (arch_name && g_strcmp0(arch_name, "SRPMS")) {
+    g_string_append(url, "debug/");
+
+    md_debug = cr_metadata_new(CR_HT_KEY_FILENAME, 0, NULL);
+    if (!md_debug) {
+      g_string_free(url, TRUE);
+      cr_metadata_free(md);
+      return CRE_MEMORY;
+    }
+
+    rc = cr_metadata_locate_and_load_xml(md_debug, url->str, &err);
+    if (rc) {
+      if (!g_str_has_prefix(err->message, "Metadata not found at ")) {
+        cr_metadata_free(md_debug);
+        g_string_free(url, TRUE);
+        cr_metadata_free(md);
+        return rc;
+      }
+      g_info("Continuing sync despite missing debu sub-repository at %s", url->str);
+    } else {
+      // Enumerate the set of source package names from the arch repo
+      packages_source = g_hash_table_new(g_str_hash, g_str_equal);
+      if (!packages_source) {
+        cr_metadata_free(md_debug);
+        g_string_free(url, TRUE);
+        cr_metadata_free(md);
+        return CRE_MEMORY;
+      }
+
+      g_hash_table_iter_init(&iter, packages);
+      while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
+        if (package->rpm_sourcerpm && package->rpm_sourcerpm[0]) {
+          g_hash_table_add(packages_source, package->rpm_sourcerpm);
+        }
+      }
+
+      packages_debug = cr_metadata_hashtable(md_debug);
+
+      g_hash_table_iter_init(&iter, packages_debug);
+      while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
+        if (!package->rpm_sourcerpm ||
+          !package->rpm_sourcerpm[0] ||
+          !g_hash_table_contains(packages_source, package->rpm_sourcerpm))
+        {
+          g_hash_table_iter_remove(&iter);
+        }
+      }
+
+      g_hash_table_unref(packages_source);
+
+      if (g_hash_table_size(packages_debug)) {
+        g_hash_table_iter_init(&iter, packages_debug);
+        while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
+          package->location_base = g_string_chunk_insert(package->chunk, url->str);
+        }
+      } else {
+        packages_debug = NULL;
+      }
+    }
+  }
+
+  g_string_free(url, TRUE);
+
+  if (pattern) {
+    rc = cra_stage_pattern_remove(
+      stage, arch_name, pattern,
+      invalidate_family, invalidate_dependants, TRUE);
+    if (rc) {
+      cr_metadata_free(md_debug);
+      cr_metadata_free(md);
+      return rc;
+    }
+  } else {
+    g_hash_table_iter_init(&iter, packages);
+    while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
+      rc = cra_stage_name_remove(
+        stage, arch_name, package->name,
+        invalidate_family, invalidate_dependants, TRUE);
+      if (rc) {
+        cr_metadata_free(md_debug);
+        cr_metadata_free(md);
+        return rc;
+      }
+    }
+  }
+
+  rc = cra_stage_packages_add(stage, arch_name, packages);
+  cr_metadata_free(md);
+
+  if (!rc && packages_debug) {
+    g_hash_table_iter_init(&iter, packages_debug);
+    while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
+      rc = cra_stage_name_remove(
+        stage, arch_name, package->name,
+        FALSE, FALSE, TRUE);
+      if (rc) {
+        cr_metadata_free(md_debug);
+        return rc;
+      }
+    }
+    rc = cra_stage_packages_add(stage, arch_name, packages_debug);
+  }
+  cr_metadata_free(md_debug);
+
+  return rc;
+}
+
+#define HLP_SYNC \
+  "SYNC BASE_URL [ARCH ...]\n\nAdd RPM packages from another repository"
+gpg_error_t
+cmd_sync(assuan_context_t ctx, char * line)
+{
+  struct command_context * cmd_ctx;
+  char * arch;
+  char * base_url;
+  int rc;
+
+  cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+  if (!cmd_ctx) {
+    return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
+  }
+
+  base_url = line;
+  while (*line && *line != ' ' && *line != '\t') {
+    line++;
+  }
+
+  if (base_url == line) {
+    return cmd_error(ctx, GPG_ERR_MISSING_VALUE, "missing BASE_URL argument");
+  }
+
+  if (*line) {
+    *line = '\0';
+    line++;
+  }
+
+  while (*line == ' ' || *line == '\t') {
+    line++;
+  }
+
+  if (!*line) {
+    rc = do_sync(
+      cmd_ctx->stage, base_url, NULL, NULL,
+      cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants);
+    if (rc) {
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    return cmd_ok(ctx);
+  }
+
+  while (*line) {
+    arch = line;
+    while (*line && *line != ' ' && *line != '\t') {
+      line++;
+    }
+    if (*line) {
+      *line = '\0';
+      line++;
+    }
+
+    rc = do_sync(
+      cmd_ctx->stage, base_url, arch, NULL,
+      cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants);
+    if (rc) {
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    while (*line == ' ' || *line == '\t') {
+      line++;
+    }
+  }
+
+  return cmd_ok(ctx);
+}
+
+#define HLP_SYNC_PATTERN \
+  "SYNC BASE_URL PATTERN [ARCH ...]\n\nAdd matching RPM packages from another repository"
+gpg_error_t
+cmd_sync_pattern(assuan_context_t ctx, char * line)
+{
+  struct command_context * cmd_ctx;
+  char * arch;
+  char * base_url;
+  char * raw_pattern;
+  GRegex * pattern;
+  int rc;
+
+  cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+  if (!cmd_ctx) {
+    return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
+  }
+
+  base_url = line;
+  while (*line && *line != ' ' && *line != '\t') {
+    line++;
+  }
+
+  if (base_url == line) {
+    return cmd_error(ctx, GPG_ERR_MISSING_VALUE, "missing BASE_URL argument");
+  }
+
+  if (*line) {
+    *line = '\0';
+    line++;
+  }
+
+  raw_pattern = line;
+  while (*line && *line != ' ' && *line != '\t') {
+    line++;
+  }
+
+  if (raw_pattern == line) {
+    return cmd_error(ctx, GPG_ERR_MISSING_VALUE, "missing PATTERN argument");
+  }
+
+  if (*line) {
+    *line = '\0';
+    line++;
+  }
+
+  pattern = g_regex_new(
+    raw_pattern, G_REGEX_ANCHORED | G_REGEX_OPTIMIZE, G_REGEX_MATCH_ANCHORED, &cmd_ctx->err);
+  if (!pattern) {
+    if (cmd_ctx->err && cmd_ctx->err->message) {
+      return cmd_error(ctx, GPG_ERR_ASS_PARAMETER, cmd_ctx->err->message);
+    }
+    return cmd_error(ctx, GPG_ERR_ASS_PARAMETER, "invalid regular expression");
+  }
+
+  while (*line == ' ' || *line == '\t') {
+    line++;
+  }
+
+  if (!*line) {
+    rc = do_sync(
+      cmd_ctx->stage, base_url, NULL, pattern,
+      cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants);
+    if (rc) {
+      g_regex_unref(pattern);
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    g_regex_unref(pattern);
+    return cmd_ok(ctx);
+  }
+
+  while (*line) {
+    arch = line;
+    while (*line && *line != ' ' && *line != '\t') {
+      line++;
+    }
+    if (*line) {
+      *line = '\0';
+      line++;
+    }
+
+    rc = do_sync(
+      cmd_ctx->stage, base_url, arch, pattern,
+      cmd_ctx->invalidate_family, cmd_ctx->invalidate_dependants);
+    if (rc) {
+      g_regex_unref(pattern);
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    while (*line == ' ' || *line == '\t') {
+      line++;
+    }
+  }
+
+  g_regex_unref(pattern);
+
+  return cmd_ok(ctx);
+}
+
 static const struct
 {
   const char * const name;
@@ -327,6 +667,8 @@ static const struct
   {"REMOVE_NAME", cmd_remove_name, HLP_REMOVE_NAME},
   {"REMOVE_PATTERN", cmd_remove_pattern, HLP_REMOVE_PATTERN},
   {"SHUTDOWN", cmd_shutdown, HLP_SHUTDOWN},
+  {"SYNC", cmd_sync, HLP_SYNC},
+  {"SYNC_PATTERN", cmd_sync_pattern, HLP_SYNC_PATTERN},
   {NULL},
 };
 

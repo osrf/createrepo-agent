@@ -272,6 +272,92 @@ main(int argc, char * argv[])
     assuan_sock_deinit();
     g_option_context_free(option_ctx);
     return CRA_EXIT_SUCCESS;
+  } else if (opts.sync) {
+    rc = assuan_new(&ctx);
+    if (rc) {
+      fprintf(stderr, "client context creation failed: %s\n", gpg_strerror(rc));
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    rc = connect_and_start_server(ctx, opts.path, argv[0]);
+    if (rc) {
+      fprintf(stderr, "connection to server failed: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (opts.invalidate_family) {
+      rc = set_option(ctx, "invalidate_family");
+      if (rc) {
+        fprintf(stderr, "option set failed for invalidate_family: %s\n", gpg_strerror(rc));
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    if (opts.invalidate_dependants) {
+      rc = set_option(ctx, "invalidate_dependants");
+      if (rc) {
+        fprintf(stderr, "option set failed for invalidate_dependants: %s\n", gpg_strerror(rc));
+        assuan_release(ctx);
+        assuan_sock_deinit();
+        g_option_context_free(option_ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    if (opts.arch && opts.arch[0]) {
+      arches = g_strjoinv(" ", opts.arch);
+    }
+
+    if (opts.sync_pattern) {
+      cmd = g_strjoin(" ", "SYNC_PATTERN", opts.sync, opts.sync_pattern, arches, NULL);
+    } else {
+      cmd = g_strjoin(" ", "SYNC", opts.sync, arches, NULL);
+    }
+
+    g_free(arches);
+
+    if (!cmd) {
+      fprintf(stderr, "failed to concatenate sync command\n");
+      assuan_release(ctx);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
+    g_free(cmd);
+    if (rc) {
+      fprintf(
+        stderr, "sync command failed: %s\n",
+        gpg_strerror(rc));
+      assuan_release(ctx);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    rc = assuan_transact(ctx, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
+    if (rc) {
+      fprintf(
+        stderr, "repository commit command failed: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      assuan_sock_deinit();
+      g_option_context_free(option_ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    assuan_release(ctx);
+    assuan_sock_deinit();
+    g_option_context_free(option_ctx);
+    return CRA_EXIT_SUCCESS;
   }
 
   sockpath = g_strconcat(opts.path, CRA_SOCK_NAME, NULL);

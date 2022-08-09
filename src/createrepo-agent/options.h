@@ -29,9 +29,11 @@ typedef struct
   gboolean daemon;
   gboolean server;
   gchar ** import;
+  gchar * sync;
   gchar ** arch;
   gboolean invalidate_family;
   gboolean invalidate_dependants;
+  gchar * sync_pattern;
 } cra_AgentOptions;
 
 GOptionGroup *

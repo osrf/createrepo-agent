@@ -2,7 +2,7 @@
 Rapidly and repeatedly generate RPM repository metadata
 
 ### Repository and Cache Features
-- [ ] Import from another repository  
+- [ ] Check for and verify repomd.xml.asc during sync
 - [ ] Error logging  
 - [ ] GError propagation  
 - [ ] Python API  
@@ -19,6 +19,3 @@ Rapidly and repeatedly generate RPM repository metadata
 - [ ] Architechture overview  
 - [ ] Troubleshooting guide/playbook  
 - [ ] API documentation  
-
-### Scenarios
-- [ ] Sync from another repository  

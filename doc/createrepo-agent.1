@@ -20,15 +20,21 @@ Run the createrepo-agent as a foreground process.
 .TP
 .B --import=\fIRPM_FILE\fR
 Connect to an existing createrepo-agent process or spawn a new one, then import an RPM package into the repository cluster. May be specified multiple times.
+.TP
+.B --sync=\fIBASE_URL\fR
+Connect to an existing createrepo-agent process or spawn a new one, then import RPM packages into the repository cluster from another. The \fIBASE_URL\fR may be a local file path or a remote URL. In the absence of \fB--sync-pattern\fR, any packages present in both repositories will be removed from the repository cluster and re-added from the upstream repository.
 .SH OPTIONS
 .TP
 .B --arch=\fIARCH_NAME\fR
-When importing, add the packages specified by \fB--import\fR into the sub-repositories for these architectures. Default behavior is to import into the SRPMS sub-repository.
+When importing, add the packages specified by \fB--import\fR into the sub-repositories for these architectures. When syncing, add packages from the upstream repository into the corresponding sub-repositories for these architectures. If not specified, default value is 'SRPMS'.
 .TP
 .B --invalidate-family
 When removing binary packages during import, also remove any packages from that architecture sub-repository and associated debug sub-repository which were built from the same source RPM.
 .TP
 .B --invalidate-dependants
 When removing binary packages during import, also remove any packages from that architecture sub-repository which (recursively) declare runtime dependencies on any package being removed.
+.TP
+.B --sync-pattern=\fIREGEX\fR
+When syncing from another repository, only add and remove packages which match the given regular expression.
 .SH SEE ALSO
 \fBcreaterepo_c\fR(8)
