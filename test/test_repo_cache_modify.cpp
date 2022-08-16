@@ -25,7 +25,7 @@ TEST_F(repo_cache_modify, add_in_place) {
   auto cache = create_new_cache(temp_dir);
 
   auto pkg = create_new_fake_package(temp_dir);
-  ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get(), CRA_COPYMODE_MOVE));
   pkg.release();
 
   EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
@@ -34,7 +34,7 @@ TEST_F(repo_cache_modify, add_in_place) {
 
   // Add another package with the same name
   pkg = create_new_fake_package(temp_dir);
-  ASSERT_EQ(CRE_EXISTS, cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  ASSERT_EQ(CRE_EXISTS, cra_cache_package_add(cache.get(), NULL, pkg.get(), CRA_COPYMODE_MOVE));
 
   EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
   EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
@@ -45,7 +45,7 @@ TEST_F(repo_cache_modify, add_with_move) {
   auto cache = create_new_cache(temp_dir);
 
   auto pkg = create_new_fake_package(temp_dir / "stage");
-  ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get(), CRA_COPYMODE_MOVE));
   pkg.release();
 
   EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
@@ -54,7 +54,7 @@ TEST_F(repo_cache_modify, add_with_move) {
 
   // Add another package with the same name
   pkg = create_new_fake_package(temp_dir / "stage2");
-  ASSERT_EQ(CRE_EXISTS, cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  ASSERT_EQ(CRE_EXISTS, cra_cache_package_add(cache.get(), NULL, pkg.get(), CRA_COPYMODE_MOVE));
 
   EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
   EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_adds));
@@ -65,7 +65,7 @@ TEST_F(repo_cache_modify, add_and_remove) {
   auto cache = create_new_cache(temp_dir);
 
   auto pkg = create_new_fake_package(temp_dir / "stage");
-  ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  ASSERT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get(), CRA_COPYMODE_MOVE));
   pkg.release();
 
   EXPECT_EQ(1u, g_list_length(cache->source_repo->packages));
@@ -145,7 +145,7 @@ TEST_F(repo_cache_modify, remove_and_add_similar) {
   // Re-add a nearly identical package
   auto pkg = create_new_fake_package(
     temp_dir / "stage", "", "package-name", "package-name", {"something-different"});
-  EXPECT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  EXPECT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get(), CRA_COPYMODE_MOVE));
   pkg.release();
 
   EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
@@ -165,7 +165,7 @@ TEST_F(repo_cache_modify, remove_and_add_identical) {
 
   // Re-add the exact same package
   auto pkg = create_new_fake_package(temp_dir / "stage");
-  EXPECT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get()));
+  EXPECT_CRE_OK(cra_cache_package_add(cache.get(), NULL, pkg.get(), CRA_COPYMODE_MOVE));
   pkg.release();
 
   EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
@@ -256,7 +256,7 @@ TEST_F(repo_cache_modify, remove_and_multiple) {
       "",
       "another-package",
       "another-package").release());
-  EXPECT_CRE_OK(cra_cache_packages_add(cache.get(), NULL, ht.get()));
+  EXPECT_CRE_OK(cra_cache_packages_add(cache.get(), NULL, ht.get(), CRA_COPYMODE_MOVE));
 
   EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
   EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_adds));

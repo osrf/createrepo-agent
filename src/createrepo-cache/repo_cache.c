@@ -124,6 +124,17 @@ cra_repo_flush_task_clear(cra_RepoFlushTask * task)
   task->rc = CRE_ERROR;
 }
 
+void
+cra_copy_operation_free(cra_CopyOperation * cop)
+{
+  if (!cop) {
+    return;
+  }
+
+  g_free(cop->source);
+  g_free(cop);
+}
+
 static void
 cra_repo_cache_clear(cra_RepoCache * repo)
 {
@@ -157,6 +168,9 @@ cra_repo_cache_free(cra_RepoCache * repo)
   }
 
   cra_repo_cache_clear(repo);
+
+  g_free(repo->flush_task.copy_tmp);
+  repo->flush_task.copy_tmp = NULL;
 
   for (i = 0; i < CR_XMLFILE_SENTINEL; i++) {
     g_free(repo->flush_task.xml[i].type_name);
@@ -320,6 +334,12 @@ cra_repo_cache_new(const char * path, const char * subdir)
     return NULL;
   }
 
+  repo->flush_task.copy_tmp = g_strconcat(repo->repodata_path, ".createrepo-agent-tmp", NULL);
+  if (!repo->flush_task.copy_tmp) {
+    cra_repo_cache_free(repo);
+    return NULL;
+  }
+
   repo->hrefs = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, NULL);
   if (!repo->hrefs) {
     cra_repo_cache_free(repo);
@@ -347,7 +367,8 @@ cra_repo_cache_new(const char * path, const char * subdir)
     return NULL;
   }
 
-  repo->pending_adds = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
+  repo->pending_adds = g_hash_table_new_full(
+    g_str_hash, g_str_equal, NULL, (GDestroyNotify)cra_copy_operation_free);
   if (!repo->pending_adds) {
     cra_repo_cache_free(repo);
     return NULL;
@@ -877,11 +898,13 @@ cra_package_is_debug(const char * name)
 }
 
 int
-cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * package)
+cra_cache_package_add(
+  cra_Cache * cache, const char * arch_name, cr_Package * package, cra_CopyMode mode)
 {
   cra_ArchCache * arch;
   cra_RepoCache * repo;
   cra_PackageCache * pkg;
+  cra_CopyOperation * cop = NULL;
   GList * node;
   gchar * chunk_primary;
   gchar * chunk_filelists;
@@ -953,18 +976,40 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
     }
   }
 
-  fullpath_old = g_build_path(
-    G_DIR_SEPARATOR_S, package->location_base, package->location_href, NULL);
-  if (!fullpath_old) {
-    g_free(fullpath_new);
-    g_free(href_new);
-    return CRE_MEMORY;
-  }
-  if (!g_file_test(fullpath_old, G_FILE_TEST_IS_REGULAR)) {
-    g_free(fullpath_old);
-    g_free(fullpath_new);
-    g_free(href_new);
-    return CRE_NOFILE;
+  if (mode != CRA_COPYMODE_NOTHING) {
+    fullpath_old = g_build_path(
+      G_DIR_SEPARATOR_S, package->location_base, package->location_href, NULL);
+    if (!fullpath_old) {
+      g_free(fullpath_new);
+      g_free(href_new);
+      return CRE_MEMORY;
+    }
+
+    if (!g_strcmp0(fullpath_old, fullpath_new)) {
+      g_free(fullpath_old);
+    } else {
+      cop = g_new0(cra_CopyOperation, 1);
+      if (!cop) {
+        g_free(fullpath_old);
+        g_free(fullpath_new);
+        g_free(href_new);
+        return CRE_MEMORY;
+      }
+
+      cop->source = fullpath_old;
+      cop->mode = mode;
+
+      if (g_str_has_prefix(fullpath_old, "file:///")) {
+        fullpath_old = &fullpath_old[7];
+      }
+
+      if (!strstr(fullpath_old, "://") && !g_file_test(fullpath_old, G_FILE_TEST_IS_REGULAR)) {
+        cra_copy_operation_free(cop);
+        g_free(fullpath_new);
+        g_free(href_new);
+        return CRE_MEMORY;
+      }
+    }
   }
 
   href_old = package->location_href;
@@ -972,7 +1017,7 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
     package->location_href = g_string_chunk_insert(package->chunk, href_new);
     if (!package->location_href) {
       package->location_href = href_old;
-      g_free(fullpath_old);
+      cra_copy_operation_free(cop);
       g_free(fullpath_new);
       g_free(href_new);
       return CRE_MEMORY;
@@ -992,7 +1037,7 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
     g_free(chunk_other);
     g_free(chunk_filelists);
     g_free(chunk_primary);
-    g_free(fullpath_old);
+    cra_copy_operation_free(cop);
     g_free(fullpath_new);
     return CRE_MEMORY;
   }
@@ -1004,7 +1049,7 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
     g_free(chunk_other);
     g_free(chunk_filelists);
     g_free(chunk_primary);
-    g_free(fullpath_old);
+    cra_copy_operation_free(cop);
     g_free(fullpath_new);
     return CRE_MEMORY;
   }
@@ -1017,10 +1062,8 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
   pkg->chunk[CR_XMLFILE_FILELISTS] = chunk_filelists;
   pkg->chunk[CR_XMLFILE_OTHER] = chunk_other;
 
-  if (g_strcmp0(fullpath_new, fullpath_old)) {
-    g_hash_table_replace(repo->pending_adds, fullpath_new, fullpath_old);
-  } else {
-    g_free(fullpath_old);
+  if (cop) {
+    g_hash_table_replace(repo->pending_adds, fullpath_new, cop);
   }
 
   repo->packages = g_list_sort(
@@ -1035,11 +1078,13 @@ cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * pa
 }
 
 int
-cra_cache_packages_add(cra_Cache * cache, const char * arch_name, GHashTable * packages)
+cra_cache_packages_add(
+  cra_Cache * cache, const char * arch_name, GHashTable * packages, cra_CopyMode mode)
 {
   cra_ArchCache * arch = NULL;
   cra_RepoCache * repo = NULL;
   cra_PackageCache * pkg;
+  cra_CopyOperation * cop = NULL;
   cr_Package * package;
   GHashTableIter iter;
   GList * node;
@@ -1129,20 +1174,43 @@ cra_cache_packages_add(cra_Cache * cache, const char * arch_name, GHashTable * p
       }
     }
 
-    fullpath_old = g_build_path(
-      G_DIR_SEPARATOR_S, package->location_base, package->location_href, NULL);
-    if (!fullpath_old) {
-      g_free(fullpath_new);
-      g_free(href_new);
-      rc = CRE_MEMORY;
-      break;
-    }
-    if (!g_file_test(fullpath_old, G_FILE_TEST_IS_REGULAR)) {
-      g_free(fullpath_old);
-      g_free(fullpath_new);
-      g_free(href_new);
-      rc = CRE_NOFILE;
-      break;
+    if (mode != CRA_COPYMODE_NOTHING) {
+      fullpath_old = g_build_path(
+        G_DIR_SEPARATOR_S, package->location_base, package->location_href, NULL);
+      if (!fullpath_old) {
+        g_free(fullpath_new);
+        g_free(href_new);
+        rc = CRE_MEMORY;
+        break;
+      }
+
+      if (!g_strcmp0(fullpath_old, fullpath_new)) {
+        g_free(fullpath_old);
+      } else {
+        cop = g_new0(cra_CopyOperation, 1);
+        if (!cop) {
+          g_free(fullpath_old);
+          g_free(fullpath_new);
+          g_free(href_new);
+          rc = CRE_MEMORY;
+          break;
+        }
+
+        cop->source = fullpath_old;
+        cop->mode = mode;
+
+        if (g_str_has_prefix(fullpath_old, "file:///")) {
+          fullpath_old = &fullpath_old[7];
+        }
+
+        if (!strstr(fullpath_old, "://") && !g_file_test(fullpath_old, G_FILE_TEST_IS_REGULAR)) {
+          cra_copy_operation_free(cop);
+          g_free(fullpath_new);
+          g_free(href_new);
+          rc = CRE_MEMORY;
+          break;
+        }
+      }
     }
 
     href_old = package->location_href;
@@ -1150,7 +1218,7 @@ cra_cache_packages_add(cra_Cache * cache, const char * arch_name, GHashTable * p
       package->location_href = g_string_chunk_insert(package->chunk, href_new);
       if (!package->location_href) {
         package->location_href = href_old;
-        g_free(fullpath_old);
+        cra_copy_operation_free(cop);
         g_free(fullpath_new);
         g_free(href_new);
         return CRE_MEMORY;
@@ -1165,7 +1233,7 @@ cra_cache_packages_add(cra_Cache * cache, const char * arch_name, GHashTable * p
     if (!pkg) {
       package->location_base = base_old;
       package->location_href = href_old;
-      g_free(fullpath_old);
+      cra_copy_operation_free(cop);
       g_free(fullpath_new);
       rc = CRE_MEMORY;
       break;
@@ -1173,10 +1241,8 @@ cra_cache_packages_add(cra_Cache * cache, const char * arch_name, GHashTable * p
 
     pkg->path = fullpath_new;
 
-    if (g_strcmp0(fullpath_new, fullpath_old)) {
-      g_hash_table_replace(repo->pending_adds, fullpath_new, fullpath_old);
-    } else {
-      g_free(fullpath_old);
+    if (cop) {
+      g_hash_table_replace(repo->pending_adds, fullpath_new, cop);
     }
 
     // The cra_RepoCache now owns the cr_Package
@@ -1627,32 +1693,134 @@ cra_repomd_record_stamp_cmp(cr_RepomdRecord * a, cr_RepomdRecord * b)
 }
 
 static int
-move_file(const char * src, const char * dst)
+make_parent(const char * path)
 {
   int rc;
   gchar * parent;
+
+  parent = g_path_get_dirname(path);
+  if (!parent) {
+    errno = ENOMEM;
+    return -1;
+  }
+
+  rc = g_mkdir_with_parents(parent, 0755);
+  g_free(parent);
+  return rc;
+}
+
+static int
+move_file(const char * src, const char * dst)
+{
+  int rc;
+
+  if (g_str_has_prefix(src, "file:///")) {
+    src = &src[7];
+  }
 
   rc = rename(src, dst);
   if (!rc) {
     return rc;
   }
 
-  if (errno == EEXIST && (rc = remove(dst))) {
-    return rc;
-  } else if (errno == ENOENT) {
-    parent = g_path_get_dirname(dst);
-    if (!parent) {
-      errno = ENOMEM;
-      return -1;
-    }
-    rc = g_mkdir_with_parents(parent, 0755);
-    g_free(parent);
+  if (errno == ENOENT) {
+    rc = make_parent(dst);
     if (rc) {
       return rc;
     }
   }
 
   return rename(src, dst);
+}
+
+static int
+link_file_no_tmp(const char * src, const char * dst)
+{
+  int rc;
+
+  rc = link(src, dst);
+  if (!rc) {
+    return rc;
+  }
+
+  if (errno == ENOENT) {
+    rc = make_parent(dst);
+    if (rc) {
+      return rc;
+    }
+  }
+
+  return link(src, dst);
+}
+
+static int
+link_file(const char * src, const char * dst, const char * tmp)
+{
+  int rc;
+
+  if (g_str_has_prefix(src, "file:///")) {
+    src = &src[7];
+  }
+
+  rc = link_file_no_tmp(src, dst);
+  if (!rc || errno != EEXIST) {
+    return rc;
+  }
+
+  rc = link_file_no_tmp(src, tmp);
+  if (rc) {
+    return rc;
+  }
+
+  rc = move_file(tmp, dst);
+  if (!rc) {
+    return rc;
+  }
+
+  rc = errno;
+  if (unlink(tmp)) {
+    g_warning("Failed to clean up temporary file at %s", tmp);
+  }
+
+  errno = rc;
+  return -1;
+}
+
+int
+cra_copy_file(const cra_CopyOperation * cop, const char * dst, const char * tmp)
+{
+  GError * err = NULL;
+
+  if (cop->mode == CRA_COPYMODE_LINK) {
+    if (!tmp) {
+      return CRE_BADARG;
+    }
+    if (!link_file(cop->source, dst, tmp)) {
+      return CRE_OK;
+    }
+    g_warning("File link failed, trying to copy instead...");
+  } else if (cop->mode == CRA_COPYMODE_MOVE) {
+    if (!move_file(cop->source, dst)) {
+      return CRE_OK;
+    }
+    g_warning("File move failed, trying to copy instead...");
+  } else if (cop->mode == CRA_COPYMODE_NOTHING) {
+    return CRE_OK;
+  } else if (cop->mode != CRA_COPYMODE_COPY) {
+    return CRE_BADARG;
+  }
+
+  if (make_parent(dst)) {
+    return CRE_IO;
+  }
+  if (cr_better_copy_file(cop->source, dst, &err)) {
+    return CRE_OK;
+  }
+
+  g_error("Failed to copy file: %s => %s: %s", cop->source, dst, cr_strerror(err->code));
+  g_error_free(err);
+
+  return FALSE;
 }
 
 static int
@@ -1719,10 +1887,10 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
   (void)user_data;
 
   gint64 expired;
+  cra_CopyOperation * cop;
   cr_RepomdRecord * record;
   GHashTableIter iter;
   int rc;
-  char * src;
   char * dst;
 
   /*
@@ -1753,11 +1921,16 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
    * Step 4.2: Move new package files into place
    */
 
+  if (unlink(task->copy_tmp) && errno != ENOENT) {
+    g_warning(
+      "Failed to clean up temporary file at %s (%d): %s", task->copy_tmp, errno, strerror(errno));
+  }
+
   g_hash_table_iter_init(&iter, task->repo->pending_adds);
-  while (g_hash_table_iter_next(&iter, (gpointer *)&dst, (gpointer *)&src)) {
-    if (move_file(src, dst)) {
-      g_warning("Failed to move file %s => %s (%d): %s", src, dst, errno, strerror(errno));
-      task->rc = CRE_IO;
+  while (g_hash_table_iter_next(&iter, (gpointer *)&dst, (gpointer *)&cop)) {
+    rc = cra_copy_file(cop, dst, task->copy_tmp);
+    if (rc) {
+      task->rc = rc;
       return;
     }
     g_hash_table_remove(task->repo->pending_rems, dst);

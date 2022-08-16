@@ -243,4 +243,16 @@ create_and_populate_cache(const fs::path & path)
   return cache;
 }
 
+bool
+are_same_file(const std::string & a, const std::string & b)
+{
+  gboolean same;
+
+  if (!cr_identical_files(a.c_str(), b.c_str(), &same, NULL)) {
+    throw std::system_error(EIO, std::generic_category());
+  }
+
+  return same;
+}
+
 #endif  // UTILS_HPP_

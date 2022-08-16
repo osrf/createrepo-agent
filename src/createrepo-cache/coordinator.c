@@ -163,7 +163,7 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
 
       if (!rc && op->add_packages) {
         rc = cra_cache_packages_add(
-          coordinator->cache, op->arch_name, op->add_packages);
+          coordinator->cache, op->arch_name, op->add_packages, CRA_COPYMODE_LINK);
         if (!rc) {
           g_hash_table_destroy(op->add_packages);
           op->add_packages = NULL;
@@ -172,7 +172,7 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
 
       if (!rc && op->add_package) {
         rc = cra_cache_package_add(
-          coordinator->cache, op->arch_name, op->add_package);
+          coordinator->cache, op->arch_name, op->add_package, CRA_COPYMODE_LINK);
         if (!rc) {
           op->add_package = NULL;
         }

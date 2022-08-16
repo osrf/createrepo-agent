@@ -25,6 +25,14 @@ extern "C"
 
 typedef struct _cra_Cache cra_Cache;
 
+typedef enum
+{
+  CRA_COPYMODE_NOTHING = 0,
+  CRA_COPYMODE_COPY,
+  CRA_COPYMODE_MOVE,
+  CRA_COPYMODE_LINK,
+} cra_CopyMode;
+
 typedef struct
 {
   size_t repo_count;
@@ -44,10 +52,12 @@ int
 cra_cache_realize(cra_Cache * cache, const char * arch_name);
 
 int
-cra_cache_package_add(cra_Cache * cache, const char * arch_name, cr_Package * package);
+cra_cache_package_add(
+  cra_Cache * cache, const char * arch_name, cr_Package * package, cra_CopyMode mode);
 
 int
-cra_cache_packages_add(cra_Cache * cache, const char * arch_name, GHashTable * packages);
+cra_cache_packages_add(
+  cra_Cache * cache, const char * arch_name, GHashTable * packages, cra_CopyMode mode);
 
 int
 cra_cache_name_remove(

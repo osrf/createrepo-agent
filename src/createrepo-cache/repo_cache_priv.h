@@ -38,6 +38,12 @@ typedef enum
 
 typedef struct
 {
+  gchar * source;
+  cra_CopyMode mode;
+} cra_CopyOperation;
+
+typedef struct
+{
   gchar * path;
   gchar * type_name;
   cra_RepoCache * repo;
@@ -62,6 +68,8 @@ typedef struct
 
   cra_RepoCache * repo;
   cra_XmlFlushTask xml[CR_XMLFILE_SENTINEL];
+
+  gchar * copy_tmp;
 
   int rc;
 } cra_RepoFlushTask;
@@ -105,11 +113,17 @@ struct _cra_Cache
   gpgme_ctx_t gpgme;
 };
 
+void
+cra_copy_operation_free(cra_CopyOperation * cop);
+
 cra_ArchCache *
 cra_arch_cache_get_or_create(cra_Cache * cache, const char * arch_name);
 
 int
 cra_repo_cache_populate(cra_RepoCache * repo, GHashTable * ht);
+
+int
+cra_copy_file(const cra_CopyOperation * cop, const char * dst, const char * tmp);
 
 #ifdef __cplusplus
 }
