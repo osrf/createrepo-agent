@@ -27,7 +27,9 @@ jobs:
       - run: >
           cmake ..
           -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON
-          "-DCMAKE_C_FLAGS=-Werror"
+          -DCMAKE_BUILD_TYPE=Debug
+          "-DCMAKE_C_FLAGS=-Werror -ftest-coverage -fprofile-arcs -O0"
+          "-DCMAKE_CXX_FLAGS=-Werror -ftest-coverage -fprofile-arcs -O0"
           "-DMEMORYCHECK_COMMAND_OPTIONS=-q --tool=memcheck --leak-check=yes
           --error-exitcode=1 --gen-suppressions=all"
         working-directory: ${{github.workspace}}/build
@@ -46,6 +48,15 @@ jobs:
           if-no-files-found: ignore
           path: |
             ${{github.workspace}}/build/Testing/Temporary/MemoryChecker.*.log
+      - run: >
+          find build -name '*.gcno' -not -name '*CompilerId.gcno' | xargs gcov
+          -pb
+          --source-prefix ${{github.workspace}}
+          --relative-only
+          --demangled-names
+      - uses: codecov/codecov-action@v3
+        with:
+          flags: unittests,${{runner.os}}
   yamllint:
     runs-on: ubuntu-latest
     steps:
