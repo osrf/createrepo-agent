@@ -36,5 +36,44 @@ When removing binary packages during import, also remove any packages from that 
 .TP
 .B --sync-pattern=\fIREGEX\fR
 When syncing from another repository, only add and remove packages which match the given regular expression.
+.SH EXAMPLES
+.SS Importing loose packages into a repository
+.IP \[bu]
+Import three packages into the repository. If there is already a package in the repository with any of the given names, remove it and all packages which were built at the same time. Import them into both the i386 and x86_64 sub-repositories.
+.nf
+\&
+.in +4m
+.B $ createrepo-agent \-\-import=foo\-1.2.3.i686.rpm \-\-import=foo\-devel\-1.2.3.i686.rpm \-\-import=foo\-debuginfo\-1.2.3.i686.rpm \-\-arch=i386 \-\-arch=x86_64 \-\-invalidate-family /var/www/html/repo/
+.in
+\&
+.fi
+.IP \[bu]
+Import a single source package into the repository.
+.nf
+\&
+.in +4m
+.B $ createrepo-agent \-\-import=foo\-1.2.3.src.rpm /var/www/html/repo/
+.in
+\&
+.fi
+.SS Importing packages from other repositories
+.IP \[bu]
+Import all packages present in the upstream repository. If there are already packages in the repsository which are present in the upstream repository, remove them, any packages which were built at the same time as them, and any packages which (recursively) depend on them.
+.nf
+\&
+.in +4m
+.B $ createrepo-agent \-\-sync=/var/www/html/upstream_repo/ \-\-arch=SRPMS \-\-arch=x86_64 \-\-invalidate-family \-\-invalidate-dependants /var/www/html/repo/
+.in
+\&
+.fi
+.IP \[bu]
+Import any packages present in the upstream repository with a name beginning with 'foobar' into the repository. Any packages already in the repository matching the pattern which are not also present in the upstream repository are removed.
+.nf
+\&
+.in +4m
+.B $ createrepo-agent \-\-sync=https://example.com/upstream_repo/ \-\-arch=SRPMS \-\-arch=x86_64 \-\-sync-pattern 'foobar.*' /var/www/html/repo/
+.in
+\&
+.fi
 .SH SEE ALSO
 \fBcreaterepo_c\fR(8)
