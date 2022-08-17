@@ -472,13 +472,18 @@ cra_package_cache_node_cmp(cra_PackageCache * a, cra_PackageCache * b)
 }
 
 static void
-cra_package_cache_worker(cra_PackageCache * pkg, void * user_data)
+cra_package_cache_worker(cra_PackageCache * pkg, GAsyncQueue * failures)
 {
-  (void)user_data;
-
   pkg->chunk[CR_XMLFILE_PRIMARY] = cr_xml_dump_primary(pkg->package, NULL);
   pkg->chunk[CR_XMLFILE_FILELISTS] = cr_xml_dump_filelists(pkg->package, NULL);
   pkg->chunk[CR_XMLFILE_OTHER] = cr_xml_dump_other(pkg->package, NULL);
+
+  if (!pkg->chunk[CR_XMLFILE_PRIMARY] ||
+    !pkg->chunk[CR_XMLFILE_FILELISTS] ||
+    !pkg->chunk[CR_XMLFILE_OTHER])
+  {
+    g_async_queue_push(failures, pkg);
+  }
 }
 
 static void
@@ -592,37 +597,57 @@ cra_repo_cache_package_add(cra_RepoCache * repo, cr_Package * package)
 }
 
 int
-cra_repo_cache_populate(cra_RepoCache * repo, GHashTable * ht)
+cra_repo_cache_packages_add(cra_RepoCache * repo, GHashTable * packages, cra_CopyMode mode)
 {
+  cra_PackageCache * pkg;
+  cra_CopyOperation * cop = NULL;
+  cr_Package * package;
+  GList * node;
   GThreadPool * pool;
   GHashTableIter iter;
-  GList * node;
-  cr_Package * package;
-  cra_PackageCache * pkg;
+  GAsyncQueue * failures;
+  gchar * fullpath_old;
   gchar * fullpath_new;
+  gchar * href_new;
+  gchar * href_old;
+  gchar * base_old;
+  int rc = CRE_OK;
+
+  failures = g_async_queue_new();
+  if (!failures) {
+    return CRE_MEMORY;
+  }
 
   pool = g_thread_pool_new(
-    (GFunc)cra_package_cache_worker, NULL, (gint)g_get_num_processors(), TRUE, NULL);
+    (GFunc)cra_package_cache_worker, failures, (gint)g_get_num_processors(), TRUE, NULL);
   if (!pool) {
+    g_async_queue_unref(failures);
     return CRE_ERROR;
   }
 
-  g_hash_table_iter_init(&iter, ht);
+  g_hash_table_iter_init(&iter, packages);
   while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
-    if (g_hash_table_contains(repo->hrefs, package->location_href)) {
-      g_thread_pool_free(pool, TRUE, TRUE);
-      cra_repo_cache_clear(repo);
-      return CRE_EXISTS;
+    href_new = g_strconcat("Packages/./", cr_get_filename(package->location_href), NULL);
+    if (!href_new) {
+      rc = CRE_MEMORY;
+      break;
+    }
+    href_new[9] = package_dir[(unsigned char)href_new[11]];
+
+    if (g_hash_table_contains(repo->hrefs, href_new)) {
+      g_free(href_new);
+      rc = CRE_EXISTS;
+      break;
     }
 
-    fullpath_new = g_strconcat(repo->path, package->location_href, NULL);
+    fullpath_new = g_strconcat(repo->path, href_new, NULL);
     if (!fullpath_new) {
-      g_thread_pool_free(pool, TRUE, TRUE);
-      cra_repo_cache_clear(repo);
-      return CRE_MEMORY;
+      g_free(href_new);
+      rc = CRE_MEMORY;
+      break;
     }
 
-    if (g_hash_table_steal_extended(repo->pending_rems, fullpath_new, NULL, (gpointer *)&node)) {
+    if (g_hash_table_lookup_extended(repo->pending_rems, fullpath_new, NULL, (gpointer *)&node)) {
       pkg = node->data;
       if (!g_strcmp0(package->pkgId, pkg->package->pkgId)) {
         // This operation is re-adding a package pending removal.
@@ -631,21 +656,82 @@ cra_repo_cache_populate(cra_RepoCache * repo, GHashTable * ht)
         cra_repo_cache_package_add_node(repo, node);
         g_hash_table_iter_remove(&iter);
         g_free(fullpath_new);
+        g_free(href_new);
         continue;
-      } else {
-        cra_package_cache_node_free(node);
       }
     }
 
+    if (mode != CRA_COPYMODE_NOTHING) {
+      fullpath_old = g_build_path(
+        G_DIR_SEPARATOR_S, package->location_base, package->location_href, NULL);
+      if (!fullpath_old) {
+        g_free(fullpath_new);
+        g_free(href_new);
+        rc = CRE_MEMORY;
+        break;
+      }
+
+      if (!g_strcmp0(fullpath_old, fullpath_new)) {
+        g_free(fullpath_old);
+      } else {
+        cop = g_new0(cra_CopyOperation, 1);
+        if (!cop) {
+          g_free(fullpath_old);
+          g_free(fullpath_new);
+          g_free(href_new);
+          rc = CRE_MEMORY;
+          break;
+        }
+
+        cop->source = fullpath_old;
+        cop->mode = mode;
+
+        if (g_str_has_prefix(fullpath_old, "file:///")) {
+          fullpath_old = &fullpath_old[7];
+        }
+
+        if (!strstr(fullpath_old, "://") && !g_file_test(fullpath_old, G_FILE_TEST_IS_REGULAR)) {
+          cra_copy_operation_free(cop);
+          g_free(fullpath_new);
+          g_free(href_new);
+          rc = CRE_MEMORY;
+          break;
+        }
+      }
+    }
+
+    href_old = package->location_href;
+    if (g_strcmp0(href_old, href_new)) {
+      package->location_href = g_string_chunk_insert(package->chunk, href_new);
+      if (!package->location_href) {
+        package->location_href = href_old;
+        cra_copy_operation_free(cop);
+        g_free(fullpath_new);
+        g_free(href_new);
+        rc = CRE_MEMORY;
+        break;
+      }
+    }
+    g_free(href_new);
+
+    base_old = package->location_base;
+    package->location_base = NULL;
+
     pkg = cra_repo_cache_package_add(repo, package);
     if (!pkg) {
+      package->location_base = base_old;
+      package->location_href = href_old;
+      cra_copy_operation_free(cop);
       g_free(fullpath_new);
-      g_thread_pool_free(pool, TRUE, TRUE);
-      cra_repo_cache_clear(repo);
-      return CRE_MEMORY;
+      rc = CRE_MEMORY;
+      break;
     }
 
     pkg->path = fullpath_new;
+
+    if (cop) {
+      g_hash_table_replace(repo->pending_adds, fullpath_new, cop);
+    }
 
     // The cra_RepoCache now owns the cr_Package
     g_hash_table_iter_steal(&iter);
@@ -656,21 +742,27 @@ cra_repo_cache_populate(cra_RepoCache * repo, GHashTable * ht)
 
   g_thread_pool_free(pool, FALSE, TRUE);
 
-  for (node = repo->packages; node; node = g_list_next(node)) {
-    pkg = (cra_PackageCache *)node->data;
-    if (
-      NULL == pkg->chunk[CR_XMLFILE_PRIMARY] ||
-      NULL == pkg->chunk[CR_XMLFILE_FILELISTS] ||
-      NULL == pkg->chunk[CR_XMLFILE_OTHER])
-    {
-      cra_repo_cache_clear(repo);
-      return CRE_ERROR;
+  g_async_queue_lock(failures);
+  pkg = g_async_queue_try_pop_unlocked(failures);
+  while (pkg) {
+    node = g_hash_table_lookup(repo->hrefs, pkg->package->location_href);
+    if (node->data != pkg) {
+      g_warning("State error: Wrong lookup while rolling back failed package");
+    } else {
+      g_warning("Removing package which failed to generate XML: %s", pkg->package->location_href);
+      cra_repo_cache_package_remove(repo, node);
     }
+    if (!rc) {
+      rc = CRE_ERROR;
+    }
+    pkg = g_async_queue_try_pop_unlocked(failures);
   }
+  g_async_queue_unlock(failures);
+  g_async_queue_unref(failures);
 
   repo->packages = g_list_sort(repo->packages, (GCompareFunc)cra_package_cache_node_cmp);
 
-  return CRE_OK;
+  return rc;
 }
 
 static int
@@ -793,7 +885,7 @@ cra_repo_cache_load(cra_RepoCache * repo, gpgme_ctx_t gpgme)
   // old metadata to keep track of.
   cr_xml_parse_repomd(repo->repomd_old_path, repo->repomd_old, NULL, NULL, NULL);
 
-  rc = cra_repo_cache_populate(repo, cr_metadata_hashtable(md));
+  rc = cra_repo_cache_packages_add(repo, cr_metadata_hashtable(md), CRA_COPYMODE_NOTHING);
   cr_metadata_free(md);
   if (rc) {
     return rc;
@@ -1083,18 +1175,9 @@ cra_cache_packages_add(
 {
   cra_ArchCache * arch = NULL;
   cra_RepoCache * repo = NULL;
-  cra_PackageCache * pkg;
-  cra_CopyOperation * cop = NULL;
   cr_Package * package;
   GHashTableIter iter;
-  GList * node;
-  GThreadPool * pool;
-  gchar * fullpath_old;
-  gchar * fullpath_new;
-  gchar * href_new;
-  gchar * href_old;
-  gchar * base_old;
-  int rc = CRE_OK;
+  int rc;
 
   if (!arch_name) {
     repo = cache->source_repo;
@@ -1132,147 +1215,10 @@ cra_cache_packages_add(
     }
   }
 
-  pool = g_thread_pool_new(
-    (GFunc)cra_package_cache_worker, NULL, (gint)g_get_num_processors(), TRUE, NULL);
-  if (!pool) {
-    return CRE_ERROR;
+  rc = cra_repo_cache_packages_add(repo, packages, mode);
+  if (!rc) {
+    repo->flags |= CRA_REPO_DIRTY;
   }
-
-  g_hash_table_iter_init(&iter, packages);
-  while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
-    href_new = g_strconcat("Packages///", cr_get_filename(package->location_href), NULL);
-    if (!href_new) {
-      rc = CRE_MEMORY;
-      break;
-    }
-    href_new[9] = package_dir[(unsigned char)href_new[11]];
-
-    if (g_hash_table_contains(repo->hrefs, href_new)) {
-      g_free(href_new);
-      rc = CRE_EXISTS;
-      break;
-    }
-
-    fullpath_new = g_strconcat(repo->path, href_new, NULL);
-    if (!fullpath_new) {
-      g_free(href_new);
-      rc = CRE_MEMORY;
-      break;
-    }
-
-    if (g_hash_table_lookup_extended(repo->pending_rems, fullpath_new, NULL, (gpointer *)&node)) {
-      pkg = node->data;
-      if (!g_strcmp0(package->pkgId, pkg->package->pkgId)) {
-        // This operation is re-adding a package pending removal.
-        // Use the previous data and leave the old file.
-        g_hash_table_steal(repo->pending_rems, fullpath_new);
-        cra_repo_cache_package_add_node(repo, node);
-        g_hash_table_iter_remove(&iter);
-        g_free(fullpath_new);
-        g_free(href_new);
-        continue;
-      }
-    }
-
-    if (mode != CRA_COPYMODE_NOTHING) {
-      fullpath_old = g_build_path(
-        G_DIR_SEPARATOR_S, package->location_base, package->location_href, NULL);
-      if (!fullpath_old) {
-        g_free(fullpath_new);
-        g_free(href_new);
-        rc = CRE_MEMORY;
-        break;
-      }
-
-      if (!g_strcmp0(fullpath_old, fullpath_new)) {
-        g_free(fullpath_old);
-      } else {
-        cop = g_new0(cra_CopyOperation, 1);
-        if (!cop) {
-          g_free(fullpath_old);
-          g_free(fullpath_new);
-          g_free(href_new);
-          rc = CRE_MEMORY;
-          break;
-        }
-
-        cop->source = fullpath_old;
-        cop->mode = mode;
-
-        if (g_str_has_prefix(fullpath_old, "file:///")) {
-          fullpath_old = &fullpath_old[7];
-        }
-
-        if (!strstr(fullpath_old, "://") && !g_file_test(fullpath_old, G_FILE_TEST_IS_REGULAR)) {
-          cra_copy_operation_free(cop);
-          g_free(fullpath_new);
-          g_free(href_new);
-          rc = CRE_MEMORY;
-          break;
-        }
-      }
-    }
-
-    href_old = package->location_href;
-    if (g_strcmp0(href_old, href_new)) {
-      package->location_href = g_string_chunk_insert(package->chunk, href_new);
-      if (!package->location_href) {
-        package->location_href = href_old;
-        cra_copy_operation_free(cop);
-        g_free(fullpath_new);
-        g_free(href_new);
-        return CRE_MEMORY;
-      }
-    }
-    g_free(href_new);
-
-    base_old = package->location_base;
-    package->location_base = NULL;
-
-    pkg = cra_repo_cache_package_add(repo, package);
-    if (!pkg) {
-      package->location_base = base_old;
-      package->location_href = href_old;
-      cra_copy_operation_free(cop);
-      g_free(fullpath_new);
-      rc = CRE_MEMORY;
-      break;
-    }
-
-    pkg->path = fullpath_new;
-
-    if (cop) {
-      g_hash_table_replace(repo->pending_adds, fullpath_new, cop);
-    }
-
-    // The cra_RepoCache now owns the cr_Package
-    g_hash_table_iter_steal(&iter);
-
-    // Push to the XML generation pool
-    g_thread_pool_push(pool, pkg, NULL);
-  }
-
-  g_thread_pool_free(pool, FALSE, TRUE);
-
-  for (node = repo->packages; node; node = g_list_next(node)) {
-    pkg = (cra_PackageCache *)node->data;
-    if (
-      NULL == pkg->chunk[CR_XMLFILE_PRIMARY] ||
-      NULL == pkg->chunk[CR_XMLFILE_FILELISTS] ||
-      NULL == pkg->chunk[CR_XMLFILE_OTHER])
-    {
-      // TODO(cottsay): Better rollback
-      cra_repo_cache_clear(repo);
-      if (!rc) {
-        rc = CRE_ERROR;
-      }
-    }
-  }
-
-  repo->packages = g_list_sort(
-    repo->packages, (GCompareFunc)cra_package_cache_node_cmp);
-
-  repo->flags |= CRA_REPO_DIRTY;
 
   return rc;
 }

@@ -196,11 +196,11 @@ TEST_F(repo_cache_modify, remove_and_populate_similar) {
       "package-name",
       "package-name",
       {"something-different"}).release());
-  EXPECT_CRE_OK(cra_repo_cache_populate(cache->source_repo, ht.get()));
+  EXPECT_CRE_OK(cra_cache_packages_add(cache.get(), NULL, ht.get(), CRA_COPYMODE_MOVE));
 
   EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
-  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
-  EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_rems));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_adds));
+  EXPECT_EQ(1u, g_hash_table_size(cache->source_repo->pending_rems));
   EXPECT_EQ(0u, g_hash_table_size(ht.get()));
 }
 
@@ -222,7 +222,7 @@ TEST_F(repo_cache_modify, remove_and_populate_identical) {
   g_hash_table_add(
     ht.get(),
     create_new_fake_package(temp_dir / "stage").release());
-  EXPECT_CRE_OK(cra_repo_cache_populate(cache->source_repo, ht.get()));
+  EXPECT_CRE_OK(cra_cache_packages_add(cache.get(), NULL, ht.get(), CRA_COPYMODE_MOVE));
 
   EXPECT_EQ(3u, g_list_length(cache->source_repo->packages));
   EXPECT_EQ(0u, g_hash_table_size(cache->source_repo->pending_adds));
@@ -230,7 +230,7 @@ TEST_F(repo_cache_modify, remove_and_populate_identical) {
   EXPECT_EQ(0u, g_hash_table_size(ht.get()));
 }
 
-TEST_F(repo_cache_modify, remove_and_multiple) {
+TEST_F(repo_cache_modify, remove_and_populate_multiple) {
   auto cache = create_and_populate_cache(temp_dir);
 
   // Try removing some packages

@@ -187,7 +187,7 @@ populate_cache(
     repo = debug ? arch->debug_repo : arch->arch_repo;
   }
 
-  if (cra_repo_cache_populate(repo, ht.get())) {
+  if (cra_repo_cache_packages_add(repo, ht.get(), CRA_COPYMODE_NOTHING)) {
     abort();
   }
 }

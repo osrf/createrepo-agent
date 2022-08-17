@@ -120,7 +120,7 @@ cra_ArchCache *
 cra_arch_cache_get_or_create(cra_Cache * cache, const char * arch_name);
 
 int
-cra_repo_cache_populate(cra_RepoCache * repo, GHashTable * ht);
+cra_repo_cache_packages_add(cra_RepoCache * repo, GHashTable * packages, cra_CopyMode mode);
 
 int
 cra_copy_file(const cra_CopyOperation * cop, const char * dst, const char * tmp);
