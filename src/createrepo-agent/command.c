@@ -316,6 +316,33 @@ cmd_shutdown(assuan_context_t ctx, char * line)
   return cmd_ok(ctx);
 }
 
+static guint
+string_replace(GString * str, const gchar * find, const gchar * replace, guint limit)
+{
+  gchar * temp;
+  gchar ** split;
+  guint ret;
+
+  split = g_strsplit(str->str, find, (gint)limit);
+  if (!split) {
+    return 0;
+  }
+
+  ret = g_strv_length(split);
+  if (ret <= 1) {
+    g_strfreev(split);
+    return 0;
+  }
+
+  temp = g_strjoinv(replace, split);
+  g_strfreev(split);
+
+  g_string_assign(str, temp);
+  g_free(temp);
+
+  return ret - 1;
+}
+
 static int
 do_sync(
   cra_Stage * stage, const char * base_url, const char * arch_name, GRegex * pattern,
@@ -346,7 +373,7 @@ do_sync(
     g_string_append(url, "/");
   }
 
-  if (!g_string_replace(url, "$basearch", arch_name ? arch_name : "SRPMS", 0)) {
+  if (!string_replace(url, "$basearch", arch_name ? arch_name : "SRPMS", 0)) {
     g_string_append(url, arch_name ? arch_name : "SRPMS");
     g_string_append(url, "/");
   }
