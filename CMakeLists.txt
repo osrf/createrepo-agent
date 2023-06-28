@@ -31,10 +31,12 @@ target_include_directories(createrepo-cache PUBLIC
 target_include_directories(createrepo-cache SYSTEM PUBLIC
   ${CREATEREPO_C_INCLUDE_DIRS}
   ${GLIB2_INCLUDE_DIRS}
+  ${GPG_ERROR_INCLUDE_DIRS}
   ${GPGME_INCLUDE_DIRS})
 target_link_libraries(createrepo-cache PRIVATE
   ${CREATEREPO_C_LIBRARIES}
   ${GLIB2_LIBRARIES}
+  ${GPG_ERROR_LIBRARIES}
   ${GPGME_LIBRARIES})
 target_compile_definitions(createrepo-cache PRIVATE
   -DG_LOG_DOMAIN="CREATEREPO_CACHE")
