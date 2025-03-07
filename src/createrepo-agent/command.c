@@ -833,7 +833,7 @@ command_handler(int fd, const char * path)
       break;
     }
 
-    cmd_ctx = calloc(sizeof(*cmd_ctx), 1);
+    cmd_ctx = calloc(1, sizeof(*cmd_ctx));
     if (!cmd_ctx) {
       fprintf(stderr, "failed to allocate new client context\n");
       client_worker_free(ctx);
