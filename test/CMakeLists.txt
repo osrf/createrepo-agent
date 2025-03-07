@@ -18,6 +18,8 @@ endmacro()
 add_test(NAME agent_help COMMAND createrepo-agent --help)
 add_test(NAME agent_version COMMAND createrepo-agent --version)
 
+file(COPY "fixtures" DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
 add_cache_test(coordinator)
 add_cache_test(copy_file)
 add_cache_test(repo_cache_flush)
