@@ -8,7 +8,10 @@ on:  # yamllint disable-line rule:truthy
 
 jobs:
   build_and_test:
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+    runs-on: ${{matrix.os}}
     steps:
       - run: >
           sudo apt update && sudo apt install -y
@@ -22,7 +25,7 @@ jobs:
           valgrind
         env:
           DEBIAN_FRONTEND: noninteractive
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - run: mkdir -p build
       - run: >
           cmake ..
@@ -41,7 +44,7 @@ jobs:
           -j2
           -D ExperimentalMemCheck
         working-directory: ${{github.workspace}}/build
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         if: ${{ failure() }}
         with:
           name: MemoryChecker
@@ -54,11 +57,11 @@ jobs:
           --source-prefix ${{github.workspace}}
           --relative-only
           --demangled-names
-      - uses: codecov/codecov-action@v3
+      - uses: codecov/codecov-action@v5
         with:
-          flags: unittests,${{runner.os}}
+          token: ${{secrets.CODECOV_TOKEN}}
   yamllint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - run: yamllint .
