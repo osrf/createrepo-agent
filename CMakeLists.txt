@@ -44,17 +44,38 @@ set_target_properties(createrepo-cache PROPERTIES
   SOVERSION ${CRA_VERSION_MAJOR}
   VERSION ${CRA_VERSION})
 
-# Agent
+# Client/Server
 configure_file(
   "src/${PROJECT_NAME}/common.h.in"
   "${CMAKE_CURRENT_BINARY_DIR}/gen/${PROJECT_NAME}/common.h"
   @ONLY)
-add_executable(${PROJECT_NAME}
-  src/${PROJECT_NAME}/agent.c
+add_library(createrepo-agent-lib OBJECT
   src/${PROJECT_NAME}/client.c
   src/${PROJECT_NAME}/command.c
-  src/${PROJECT_NAME}/options.c)
-target_include_directories(${PROJECT_NAME} PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/gen")
+  src/${PROJECT_NAME}/options.c
+  src/${PROJECT_NAME}/server.c)
+target_include_directories(createrepo-agent-lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/gen>)
+target_include_directories(createrepo-agent-lib SYSTEM PRIVATE
+  ${CREATEREPO_C_INCLUDE_DIRS})
+target_include_directories(createrepo-agent-lib SYSTEM PUBLIC
+  ${GLIB2_INCLUDE_DIRS}
+  ${GPG_ERROR_INCLUDE_DIRS}
+  ${LIBASSUAN_INCLUDE_DIRS})
+target_link_libraries(createrepo-agent-lib PRIVATE
+  createrepo-cache
+  ${CREATEREPO_C_LIBRARIES})
+target_link_libraries(createrepo-agent-lib PUBLIC
+  ${GLIB2_LIBRARIES}
+  ${GPG_ERROR_LIBRARIES}
+  ${LIBASSUAN_LIBRARIES})
+target_compile_definitions(createrepo-agent-lib PRIVATE
+  -DG_LOG_DOMAIN="CREATEREPO_AGENT")
+
+# Executable
+add_executable(${PROJECT_NAME}
+  src/${PROJECT_NAME}/agent.c)
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
   ${CREATEREPO_C_INCLUDE_DIRS}
   ${GLIB2_INCLUDE_DIRS}
@@ -62,14 +83,12 @@ target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
   ${GPGME_INCLUDE_DIRS}
   ${LIBASSUAN_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE
-  createrepo-cache
+  createrepo-agent-lib
   ${CREATEREPO_C_LIBRARIES}
   ${GLIB2_LIBRARIES}
   ${GPG_ERROR_LIBRARIES}
   ${GPGME_LIBRARIES}
   ${LIBASSUAN_LIBRARIES})
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-  -DG_LOG_DOMAIN="CREATEREPO_AGENT")
 install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin
   COMPONENT bin)
