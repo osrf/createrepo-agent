@@ -15,6 +15,14 @@ macro(add_cache_test NAME)
   add_test(NAME ${NAME} COMMAND test_${NAME})
 endmacro()
 
+macro(add_integration_test NAME)
+  add_executable(test_${NAME} "integration_main.cpp" "test_${NAME}.cpp")
+  target_link_libraries(test_${NAME}
+    ${GTEST_LIBRARIES}
+    createrepo-agent-lib)
+  add_test(NAME ${NAME} COMMAND test_${NAME})
+endmacro()
+
 add_test(NAME agent_help COMMAND createrepo-agent --help)
 add_test(NAME agent_version COMMAND createrepo-agent --version)
 
