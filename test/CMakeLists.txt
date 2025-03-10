@@ -33,3 +33,5 @@ add_cache_test(copy_file)
 add_cache_test(repo_cache_flush)
 add_cache_test(repo_cache_invalidate)
 add_cache_test(repo_cache_modify)
+
+add_integration_test(smoke)
