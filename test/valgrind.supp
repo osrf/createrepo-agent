@@ -8,6 +8,4 @@
    fun:_dl_allocate_tls
    ...
    fun:pthread_create@@*
-   ...
-   fun:g_thread_pool_*
 }
