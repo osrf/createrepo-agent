@@ -382,13 +382,13 @@ cra_repo_cache_new(const char * path, const char * subdir)
   }
 
   #define _CRA_XML_FLUSH_TASK_INIT(_type, _name) ( \
-    repo->flush_task.xml[_type].rc = CRE_ERROR, \
-    repo->flush_task.xml[_type].repo = repo, \
-    repo->flush_task.xml[_type].type = _type, \
-    repo->flush_task.xml[_type].type_name = g_strdup(_name), \
-    repo->flush_task.xml[_type].path = g_strconcat( \
-      repo->path, "repodata/", _name, ".xml.gz", NULL), \
-    repo->flush_task.xml[_type].type_name && repo->flush_task.xml[_type].path)
+      repo->flush_task.xml[_type].rc = CRE_ERROR, \
+      repo->flush_task.xml[_type].repo = repo, \
+      repo->flush_task.xml[_type].type = _type, \
+      repo->flush_task.xml[_type].type_name = g_strdup(_name), \
+      repo->flush_task.xml[_type].path = g_strconcat( \
+        repo->path, "repodata/", _name, ".xml.gz", NULL), \
+      repo->flush_task.xml[_type].type_name && repo->flush_task.xml[_type].path)
 
   if (!_CRA_XML_FLUSH_TASK_INIT(CR_XMLFILE_PRIMARY, "primary")) {
     cra_repo_cache_free(repo);
