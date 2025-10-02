@@ -37,3 +37,12 @@ add_cache_test(repo_cache_invalidate)
 add_cache_test(repo_cache_modify)
 
 add_integration_test(smoke)
+
+if(WITH_PYTHON)
+  add_test(
+    NAME pytest
+    COMMAND ${CMAKE_COMMAND} -E env
+      "PYTHONPATH=$<TARGET_FILE_DIR:createrepo_agent>"
+      "PYTHONDONTWRITEBYTECODE=1"
+      ${Python_EXECUTABLE} -m pytest ${CMAKE_CURRENT_SOURCE_DIR})
+endif()

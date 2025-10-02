@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.15)
 
 project(createrepo-agent C)
 
@@ -35,6 +35,7 @@ target_link_libraries(createrepo-cache PUBLIC
 target_compile_definitions(createrepo-cache PRIVATE
   -DG_LOG_DOMAIN="CREATEREPO_CACHE")
 set_target_properties(createrepo-cache PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
   SOVERSION ${CRA_VERSION_MAJOR}
   VERSION ${CRA_VERSION})
 
@@ -60,6 +61,8 @@ target_link_libraries(createrepo-agent-lib PUBLIC
   glib-2.0)
 target_compile_definitions(createrepo-agent-lib PRIVATE
   -DG_LOG_DOMAIN="CREATEREPO_AGENT")
+set_target_properties(createrepo-agent-lib PROPERTIES
+  POSITION_INDEPENDENT_CODE ON)
 
 # Executable
 add_executable(${PROJECT_NAME}
@@ -74,6 +77,73 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin
   COMPONENT bin)
+
+# Python bindings
+cmake_policy(SET CMP0094 NEW)
+set(Python_FIND_UNVERSIONED_NAMES FIRST
+  CACHE STRING "Defines how the generic names will be searched for Python")
+if(CMAKE_VERSION VERSION_LESS "3.18")
+  set(Python_COMPONENTS Interpreter Development)
+else()
+  set(Python_COMPONENTS Interpreter Development.Module)
+endif()
+find_package(Python 3 QUIET COMPONENTS ${Python_COMPONENTS})
+option(WITH_PYTHON "Build Python bindings" ${Python_FOUND})
+if(WITH_PYTHON)
+  # Find Python again, this time REQUIRED
+  find_package(Python 3 REQUIRED COMPONENTS ${Python_COMPONENTS})
+
+  python_add_library(createrepo_agent MODULE
+    src/python/client.c
+    src/python/init.c
+    src/python/server.c)
+  target_link_libraries(createrepo_agent PRIVATE
+    createrepo-agent-lib)
+
+  if(SKBUILD)
+    set(PYTHON_INSTALL_DIR ${SKBUILD_PLATLIB_DIR})
+  else()
+    # Determine package installation location
+    string(JOIN "; " PYTHON_INSTALL_DIR_CMD
+      "from os.path import sep"
+      "from sys import stdout"
+      "from sysconfig import get_path"
+      "stdout.write(get_path('platlib', vars={'base': '', 'platbase': ''}).lstrip(sep))"
+    )
+    execute_process(COMMAND ${Python_EXECUTABLE} -c "${PYTHON_INSTALL_DIR_CMD}"
+      OUTPUT_VARIABLE PYTHON_INSTALL_DIR)
+
+    set(DISTINFO_NAME "createrepo_agent-${CRA_VERSION}.dist-info")
+    set(DISTINFO_DIR "${CMAKE_CURRENT_BINARY_DIR}/${DISTINFO_NAME}")
+    file(GENERATE
+      OUTPUT "${DISTINFO_DIR}/INSTALLER"
+      CONTENT "cmake\n")
+    file(GENERATE
+      OUTPUT "${DISTINFO_DIR}/METADATA"
+      CONTENT "Metadata-Version: 1.1\nName: createrepo-agent\nVersion: ${CRA_VERSION}\n")
+    string(JOIN "\n" RECORD_CONTENT
+        "$<TARGET_FILE_NAME:createrepo_agent>,,"
+        "${DISTINFO_NAME}/INSTALLER,,"
+        "${DISTINFO_NAME}/METADATA,,"
+        "${DISTINFO_NAME}/RECORD,,"
+        "${DISTINFO_NAME}/top_level.txt,,"
+    )
+    file(GENERATE
+      OUTPUT "${DISTINFO_DIR}/RECORD"
+      CONTENT "${RECORD_CONTENT}\n")
+    file(GENERATE
+      OUTPUT "${DISTINFO_DIR}/top_level.txt"
+      CONTENT "createrepo_agent\n")
+    install(DIRECTORY ${DISTINFO_DIR}
+      DESTINATION ${PYTHON_INSTALL_DIR}
+      COMPONENT python)
+  endif()
+
+  install(TARGETS createrepo_agent
+    RUNTIME DESTINATION ${PYTHON_INSTALL_DIR}
+    LIBRARY DESTINATION ${PYTHON_INSTALL_DIR}
+    COMPONENT python)
+endif()
 
 add_subdirectory(doc)
 
