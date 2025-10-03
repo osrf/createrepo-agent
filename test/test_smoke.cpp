@@ -22,4 +22,4 @@ TEST_P(smoke, commit) {
   gpg_error_t rc = assuan_transact(client, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
   EXPECT_FALSE(rc);
 }
-INSTANTIATE_TEST_SUITE_P( , smoke, testing::Values("empty", "populated"), smoke::PrintParamName);
+INSTANTIATE_TEST_CASE_P(smoke, smoke, testing::Values("empty", "populated"), smoke::PrintParamName);
