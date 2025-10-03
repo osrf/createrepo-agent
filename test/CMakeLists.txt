@@ -10,6 +10,7 @@ find_package(GTest REQUIRED)
 macro(add_cache_test NAME)
   add_executable(test_${NAME} "main.cpp" "test_${NAME}.cpp")
   target_link_libraries(test_${NAME}
+    "$<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:-lstdc++fs>"
     ${GTEST_LIBRARIES}
     createrepo-cache)
   add_test(NAME ${NAME} COMMAND test_${NAME})
@@ -18,6 +19,7 @@ endmacro()
 macro(add_integration_test NAME)
   add_executable(test_${NAME} "integration_main.cpp" "test_${NAME}.cpp")
   target_link_libraries(test_${NAME}
+    "$<$<AND:$<CXX_COMPILER_ID:GNU>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,9.0>>:-lstdc++fs>"
     ${GTEST_LIBRARIES}
     createrepo-agent-lib)
   add_test(NAME ${NAME} COMMAND test_${NAME})
