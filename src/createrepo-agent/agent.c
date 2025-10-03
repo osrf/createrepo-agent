@@ -29,6 +29,9 @@
 #include "createrepo-agent/options.h"
 #include "createrepo-agent/server.h"
 
+static volatile sig_atomic_t g_sentinel = 0;
+static const char sigterm_msg[] = "Caught signal, shutting down...\n";
+
 void
 ignore_sigpipe()
 {
@@ -38,6 +41,28 @@ ignore_sigpipe()
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = 0;
   sigaction(SIGPIPE, &sa, NULL);
+}
+
+void
+handle_shutdown(int sig)
+{
+  // Here to squelch a compiler warning in a cross-toolchain way.
+  (void)sig;
+
+  write(2, sigterm_msg, sizeof(sigterm_msg));
+  g_sentinel = 1;
+}
+
+void
+attach_shutdown()
+{
+  struct sigaction sa;
+
+  sa.sa_handler = handle_shutdown;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = (int)SA_RESETHAND;
+  sigaction(SIGTERM, &sa, NULL);
+  sigaction(SIGINT, &sa, NULL);
 }
 
 static gpg_error_t
@@ -407,8 +432,9 @@ main(int argc, char * argv[])
   }
 
   ignore_sigpipe();
+  attach_shutdown();
 
-  command_handler(fd, opts.path);
+  command_handler(fd, opts.path, &g_sentinel);
 
   assuan_sock_deinit();
 

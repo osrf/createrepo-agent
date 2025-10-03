@@ -15,6 +15,7 @@
 #include <assuan.h>
 #include <createrepo_c/createrepo_c.h>
 #include <errno.h>
+#include <signal.h>
 #include <string.h>
 
 #include "createrepo-agent/command.h"
@@ -33,7 +34,7 @@ struct command_context
   gboolean invalidate_dependants;
   gboolean missing_ok;
   GError * err;
-  gint * sentinel;
+  volatile sig_atomic_t * sentinel;
 };
 
 static const char * const greeting = "Greetings from creatrepo-agent " CRA_VERSION;
@@ -309,7 +310,7 @@ cmd_shutdown(assuan_context_t ctx, char * line)
     return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
   }
 
-  g_atomic_int_set(cmd_ctx->sentinel, 1);
+  *cmd_ctx->sentinel = 1;
   shutdown(cmd_ctx->listen_fd, SHUT_RD);
   assuan_set_flag(ctx, ASSUAN_FORCE_CLOSE, 1);
 
@@ -791,7 +792,7 @@ client_worker(assuan_context_t ctx, gpointer unused)
 
   cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
   if (cmd_ctx) {
-    while (!done && !g_atomic_int_get(cmd_ctx->sentinel)) {
+    while (!done && !*cmd_ctx->sentinel) {
       rc = assuan_process_next(ctx, &done);
       if (rc) {
         break;
@@ -803,14 +804,18 @@ client_worker(assuan_context_t ctx, gpointer unused)
 }
 
 void
-command_handler(int fd, const char * path)
+command_handler(int fd, const char * path, volatile sig_atomic_t * sentinel)
 {
   gpg_error_t rc;
   assuan_context_t ctx;
   struct command_context * cmd_ctx;
   cra_Coordinator * coordinator;
   GThreadPool * pool;
-  gint sentinel = 0;
+  volatile sig_atomic_t local_sentinel = 0;
+
+  if (NULL == sentinel) {
+    sentinel = &local_sentinel;
+  }
 
   coordinator = cra_coordinator_new(path);
   if (!coordinator) {
@@ -826,7 +831,7 @@ command_handler(int fd, const char * path)
     return;
   }
 
-  do {
+  while (!*sentinel) {
     rc = assuan_new(&ctx);
     if (rc) {
       fprintf(stderr, "server context creation failed: %s\n", gpg_strerror(rc));
@@ -841,7 +846,7 @@ command_handler(int fd, const char * path)
     }
 
     cmd_ctx->listen_fd = fd;
-    cmd_ctx->sentinel = &sentinel;
+    cmd_ctx->sentinel = sentinel;
     cmd_ctx->stage = cra_stage_new(coordinator);
     if (!cmd_ctx->stage) {
       fprintf(stderr, "stage init failed\n");
@@ -881,9 +886,10 @@ command_handler(int fd, const char * path)
 
     rc = assuan_accept(ctx);
     if (rc) {
-      if (!g_atomic_int_get(cmd_ctx->sentinel) ||
-        gpg_err_code(rc) != gpg_err_code_from_errno(EINVAL))
-      {
+      if (gpg_err_code(rc) == gpg_err_code_from_errno(EINTR)) {
+        client_worker_free(ctx);
+        continue;
+      } else if (!*sentinel || gpg_err_code(rc) != gpg_err_code_from_errno(EINVAL)) {
         fprintf(stderr, "accept failed: %s\n", gpg_strerror(rc));
       }
       client_worker_free(ctx);
@@ -895,7 +901,7 @@ command_handler(int fd, const char * path)
       client_worker_free(ctx);
       break;
     }
-  } while (!g_atomic_int_get(&sentinel));
+  }
 
   assuan_sock_close(fd);
   g_thread_pool_free(pool, FALSE, TRUE);

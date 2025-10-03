@@ -66,7 +66,7 @@ protected:
     ASSERT_NE(server_fd, ASSUAN_INVALID_FD);
 
     /* Start the server thread */
-    handler_thread = std::thread(command_handler, server_fd, temp_dir.c_str());
+    handler_thread = std::thread(command_handler, server_fd, temp_dir.c_str(), nullptr);
 
     /* Wait for client to connect */
     for (int i = 0; assuan_socket_connect(client, sock_path.c_str(), ASSUAN_INVALID_PID, 0); i++) {

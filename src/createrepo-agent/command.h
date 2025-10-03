@@ -15,13 +15,15 @@
 #ifndef CREATEREPO_AGENT__COMMAND_H_
 #define CREATEREPO_AGENT__COMMAND_H_
 
+#include <signal.h>
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
 void
-command_handler(int fd, const char * path);
+command_handler(int fd, const char * path, volatile sig_atomic_t * sentinel);
 
 #ifdef __cplusplus
 }
