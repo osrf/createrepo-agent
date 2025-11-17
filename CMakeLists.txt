@@ -14,30 +14,24 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wconversion -Wpedantic)
 
-include(FindPkgConfig)
-pkg_check_modules(CREATEREPO_C REQUIRED createrepo_c)
-pkg_check_modules(GLIB2 REQUIRED glib-2.0)
-pkg_check_modules(GPG_ERROR REQUIRED gpg-error)
-pkg_check_modules(GPGME REQUIRED gpgme)
-pkg_check_modules(LIBASSUAN REQUIRED libassuan)
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+find_package(createrepo_c 0.13.0 MODULE REQUIRED)
+find_package(glib-2.0 MODULE REQUIRED)
+find_package(gpg-error 1.13 MODULE REQUIRED)
+find_package(gpgme 1.7.0 MODULE REQUIRED)
+find_package(assuan 2.2.0 MODULE REQUIRED)
 
 # Repository operations
 add_library(createrepo-cache STATIC
   src/createrepo-cache/coordinator.c
   src/createrepo-cache/repo_cache.c)
 target_include_directories(createrepo-cache PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-  $<INSTALL_INTERFACE:include>)
-target_include_directories(createrepo-cache SYSTEM PUBLIC
-  ${CREATEREPO_C_INCLUDE_DIRS}
-  ${GLIB2_INCLUDE_DIRS}
-  ${GPG_ERROR_INCLUDE_DIRS}
-  ${GPGME_INCLUDE_DIRS})
-target_link_libraries(createrepo-cache PRIVATE
-  ${CREATEREPO_C_LIBRARIES}
-  ${GLIB2_LIBRARIES}
-  ${GPG_ERROR_LIBRARIES}
-  ${GPGME_LIBRARIES})
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
+target_link_libraries(createrepo-cache PUBLIC
+  createrepo_c
+  glib-2.0
+  gpg-error
+  gpgme)
 target_compile_definitions(createrepo-cache PRIVATE
   -DG_LOG_DOMAIN="CREATEREPO_CACHE")
 set_target_properties(createrepo-cache PROPERTIES
@@ -57,38 +51,26 @@ add_library(createrepo-agent-lib OBJECT
 target_include_directories(createrepo-agent-lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/gen>)
-target_include_directories(createrepo-agent-lib SYSTEM PRIVATE
-  ${CREATEREPO_C_INCLUDE_DIRS})
-target_include_directories(createrepo-agent-lib SYSTEM PUBLIC
-  ${GLIB2_INCLUDE_DIRS}
-  ${GPG_ERROR_INCLUDE_DIRS}
-  ${LIBASSUAN_INCLUDE_DIRS})
 target_link_libraries(createrepo-agent-lib PRIVATE
   createrepo-cache
-  ${CREATEREPO_C_LIBRARIES})
+  createrepo_c)
 target_link_libraries(createrepo-agent-lib PUBLIC
-  ${GLIB2_LIBRARIES}
-  ${GPG_ERROR_LIBRARIES}
-  ${LIBASSUAN_LIBRARIES})
+  assuan
+  gpg-error
+  glib-2.0)
 target_compile_definitions(createrepo-agent-lib PRIVATE
   -DG_LOG_DOMAIN="CREATEREPO_AGENT")
 
 # Executable
 add_executable(${PROJECT_NAME}
   src/${PROJECT_NAME}/agent.c)
-target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
-  ${CREATEREPO_C_INCLUDE_DIRS}
-  ${GLIB2_INCLUDE_DIRS}
-  ${GPG_ERROR_INCLUDE_DIRS}
-  ${GPGME_INCLUDE_DIRS}
-  ${LIBASSUAN_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE
+  assuan
   createrepo-agent-lib
-  ${CREATEREPO_C_LIBRARIES}
-  ${GLIB2_LIBRARIES}
-  ${GPG_ERROR_LIBRARIES}
-  ${GPGME_LIBRARIES}
-  ${LIBASSUAN_LIBRARIES})
+  createrepo_c
+  glib-2.0
+  gpg-error
+  gpgme)
 install(TARGETS ${PROJECT_NAME}
   RUNTIME DESTINATION bin
   COMPONENT bin)
