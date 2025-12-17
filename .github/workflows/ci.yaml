@@ -44,7 +44,7 @@ jobs:
           -j2
           -D ExperimentalMemCheck
         working-directory: ${{github.workspace}}/build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: ${{ failure() }}
         with:
           name: MemoryChecker
