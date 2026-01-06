@@ -12,7 +12,7 @@ test = [
 ]
 
 [tool.scikit-build]
-install.components = ["python"]
+install.components = ["bin", "python"]
 sdist.exclude = [
   ".editorconfig",
   ".github",
