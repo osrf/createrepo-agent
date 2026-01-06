@@ -22,6 +22,7 @@ jobs:
           libgpgme-dev
           libgtest-dev
           make
+          python3-pytest
           valgrind
         env:
           DEBIAN_FRONTEND: noninteractive
