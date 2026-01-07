@@ -16,6 +16,6 @@ Rapidly and repeatedly generate RPM repository metadata
 
 ### Housekeeping
 - [ ] README.md  
-- [ ] Architechture overview  
+- [ ] Architecture overview
 - [ ] Troubleshooting guide/playbook  
 - [ ] API documentation  

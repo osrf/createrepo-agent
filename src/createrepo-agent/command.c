@@ -427,7 +427,7 @@ do_sync(
         cr_metadata_free(md);
         return rc;
       }
-      g_info("Continuing sync despite missing debu sub-repository at %s", url->str);
+      g_info("Continuing sync despite missing debug sub-repository at %s", url->str);
     } else {
       // Enumerate the set of source package names from the arch repo
       packages_source = g_hash_table_new(g_str_hash, g_str_equal);
