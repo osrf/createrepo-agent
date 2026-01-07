@@ -5,11 +5,36 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "createrepo-agent"
 dynamic = ["version"]
+authors = [
+  {name = "Scott K Logan", email = "logans@cottsay.net"},
+]
+maintainers = [
+  {name = "ROS Infrastructure Team"},
+]
+description = "Rapidly and repeatedly generate RPM repository metadata"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+  "assuan-ipc-protocol",
+  "repository-management",
+  "rpm",
+]
+classifiers = [
+  "Environment :: No Input/Output (Daemon)",
+  "Intended Audience :: Developers",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: C",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Archiving :: Packaging",
+]
 
 [project.optional-dependencies]
 test = [
   "pytest",
 ]
+
+[project.urls]
+GitHub = "https://github.com/osrf/createrepo-agent"
 
 [tool.scikit-build]
 install.components = ["bin", "python"]
@@ -23,6 +48,7 @@ wheel.packages = []
 
 [tool.scikit-build.cmake.define]
 BUILD_TESTING = false
+CREATEREPO_AGENT_INSTALL_MANPAGES = false
 WITH_PYTHON = true
 
 [tool.scikit-build.metadata.version]
