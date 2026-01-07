@@ -2,6 +2,10 @@
 name: Python Packaging
 
 on:  # yamllint disable-line rule:truthy
+  pull_request:
+    paths:
+      - '.github/workflows/python.yaml'
+      - 'pyproject.toml'
   push:
     tags: ['*']
   workflow_dispatch:
