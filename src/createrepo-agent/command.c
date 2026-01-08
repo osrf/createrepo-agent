@@ -586,7 +586,7 @@ cmd_sync(assuan_context_t ctx, char * line)
 }
 
 #define HLP_SYNC_PATTERN \
-  "SYNC BASE_URL PATTERN [ARCH ...]\n\nAdd matching RPM packages from another repository"
+  "SYNC_PATTERN BASE_URL PATTERN [ARCH ...]\n\nAdd matching RPM packages from another repository"
 gpg_error_t
 cmd_sync_pattern(assuan_context_t ctx, char * line)
 {
