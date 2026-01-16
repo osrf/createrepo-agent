@@ -74,8 +74,12 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   glib-2.0
   gpg-error
   gpgme)
+set(BIN_INSTALL_DIR "bin")
+if(SKBUILD)
+  set(BIN_INSTALL_DIR ${SKBUILD_SCRIPTS_DIR})
+endif()
 install(TARGETS ${PROJECT_NAME}
-  RUNTIME DESTINATION bin
+  RUNTIME DESTINATION ${BIN_INSTALL_DIR}
   COMPONENT bin)
 
 # Python bindings
