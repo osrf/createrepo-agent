@@ -397,19 +397,13 @@ do_sync(
     }
   }
 
-  if (!g_hash_table_size(packages)) {
-    g_string_free(url, TRUE);
-    cr_metadata_free(md);
-    return CRE_OK;
-  }
-
   g_hash_table_iter_init(&iter, packages);
   while (g_hash_table_iter_next(&iter, NULL, (gpointer *)&package)) {
     package->location_base = g_string_chunk_insert(package->chunk, url->str);
   }
 
   // Look for a debug sub-repository
-  if (arch_name && g_strcmp0(arch_name, "SRPMS")) {
+  if (g_hash_table_size(packages) && arch_name && g_strcmp0(arch_name, "SRPMS")) {
     g_string_append(url, "debug/");
 
     md_debug = cr_metadata_new(CR_HT_KEY_FILENAME, 0, NULL);
@@ -495,7 +489,9 @@ do_sync(
     }
   }
 
-  rc = cra_stage_packages_add(stage, arch_name, packages);
+  if (g_hash_table_size(packages)) {
+    rc = cra_stage_packages_add(stage, arch_name, packages);
+  }
   cr_metadata_free(md);
 
   if (!rc && packages_debug) {

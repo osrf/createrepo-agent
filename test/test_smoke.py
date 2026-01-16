@@ -7,6 +7,7 @@ import createrepo_agent
 import pytest
 
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
+EMPTY_REPO = FIXTURES_DIR / 'empty'
 POPULATED_REPO = FIXTURES_DIR / 'populated'
 POPULATED_RPM = Path(
     POPULATED_REPO,
@@ -105,6 +106,18 @@ def test_sync_pattern_hit(tmp_path):
 
     assert repomd_path.is_file()
     assert (arch_path / 'Packages' / 'r' / POPULATED_RPM.name).is_file()
+
+    # Performing a sync with a pattern invalidates contents of the target repository
+    # which match the pattern. Here, we specifically verify that the invalidation happens
+    # even when the upstream repository doesn't have any matches.
+
+    base_url = EMPTY_REPO.as_uri()
+    with createrepo_agent.Server(str(tmp_path)):
+        with createrepo_agent.Client(str(tmp_path)) as c:
+            c.sync(base_url, pattern, ('x86_64',))
+            c.commit()
+
+    assert not (arch_path / 'Packages' / 'r' / POPULATED_RPM.name).is_file()
 
 
 def test_sync_pattern_miss(tmp_path):
