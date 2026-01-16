@@ -127,6 +127,31 @@ sequence_to_str_array(PyObject *sequence)
   return res;
 }
 
+static gchar *
+parse_arch_list(PyObject *arches)
+{
+  gchar *arch_list = NULL;
+
+  if (1 != PySequence_Check(arches)) {
+    PyErr_SetString(PyExc_TypeError, "arches must be an iterable");
+    return NULL;
+  }
+
+  const gchar **arch_array = sequence_to_str_array(arches);
+  if (NULL == arch_array) {
+    return NULL;
+  }
+
+  arch_list = g_strjoinv(" ", (gchar **)arch_array);
+  g_free(arch_array);
+  if (NULL == arch_list) {
+    PyErr_NoMemory();
+    return NULL;
+  }
+
+  return arch_list;
+}
+
 static PyObject *
 client_add(ClientObject *self, PyObject *args)
 {
@@ -141,18 +166,10 @@ client_add(ClientObject *self, PyObject *args)
   }
 
   if (arches != NULL && arches != Py_None) {
-    if (1 != PySequence_Check(arches)) {
-      PyErr_SetString(PyExc_TypeError, "arches must be an iterable");
+    arch_list = parse_arch_list(arches);
+    if (NULL == arch_list) {
       return NULL;
     }
-
-    const gchar **arch_array = sequence_to_str_array(arches);
-    if (NULL == arch_array) {
-      return NULL;
-    }
-
-    arch_list = g_strjoinv(" ", (gchar **)arch_array);
-    g_free(arch_array);
   }
 
   cmd = g_strjoin(" ", "ADD", package, arch_list, NULL);
@@ -269,6 +286,49 @@ client_set_invalidate_family(ClientObject *self, PyObject *args)
 }
 
 static PyObject *
+client_sync(ClientObject *self, PyObject *args, PyObject *kwargs)
+{
+  char *base_url = NULL;
+  char *pattern = NULL;
+  PyObject *arches = NULL;
+  gchar *arch_list = NULL;
+  gchar *cmd;
+  PyObject *ret;
+
+  static char * keywords[] = {
+    "base_url",
+    "pattern",
+    "arches",
+    NULL,
+  };
+
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|zO", keywords, &base_url, &pattern, &arches)) {
+    return NULL;
+  }
+
+  if (arches != NULL && arches != Py_None) {
+    arch_list = parse_arch_list(arches);
+    if (NULL == arch_list) {
+      return NULL;
+    }
+  }
+
+  if (NULL == pattern) {
+    cmd = g_strjoin(" ", "SYNC", base_url, arch_list, NULL);
+  } else {
+    cmd = g_strjoin(" ", "SYNC_PATTERN", base_url, pattern, arch_list, NULL);
+  }
+  g_free(arch_list);
+  if (!cmd) {
+    return PyErr_NoMemory();
+  }
+
+  ret = execute_transaction(self, cmd);
+  g_free(cmd);
+  return ret;
+}
+
+static PyObject *
 client_enter(ClientObject *self, PyObject *args)
 {
   (void)args;
@@ -299,6 +359,7 @@ static struct PyMethodDef client_methods[] = {
   {"disconnect", (PyCFunction)client_disconnect, METH_NOARGS, NULL},
   {"set_invalidate_dependants", (PyCFunction)client_set_invalidate_dependants, METH_VARARGS, NULL},
   {"set_invalidate_family", (PyCFunction)client_set_invalidate_family, METH_VARARGS, NULL},
+  {"sync", (PyCFunction)(void(*)(void))client_sync, METH_VARARGS | METH_KEYWORDS, NULL},
   {"__enter__", (PyCFunction)client_enter, METH_NOARGS, NULL},
   {"__exit__", (PyCFunction)client_disconnect, METH_VARARGS, NULL},
   {NULL, NULL, 0, NULL}
