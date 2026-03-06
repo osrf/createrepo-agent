@@ -4,7 +4,7 @@ include(FindPackageHandleStandardArgs)
 
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
-  pkg_check_modules(gpg-error QUIET IMPORTED_TARGET gpg-error)
+  pkg_check_modules(gpg-error QUIET IMPORTED_TARGET GLOBAL gpg-error)
   list(GET gpg-error_LINK_LIBRARIES 0 gpg-error_LIBRARY)
 endif()
 

@@ -4,7 +4,7 @@ include(FindPackageHandleStandardArgs)
 
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
-  pkg_check_modules(glib-2.0 QUIET REQUIRED IMPORTED_TARGET glib-2.0)
+  pkg_check_modules(glib-2.0 QUIET REQUIRED IMPORTED_TARGET GLOBAL glib-2.0)
   list(GET glib-2.0_LINK_LIBRARIES 0 glib-2.0_LIBRARY)
   mark_as_advanced(glib-2.0_LIBRARY)
 endif()
