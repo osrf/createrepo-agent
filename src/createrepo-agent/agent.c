@@ -49,7 +49,7 @@ handle_shutdown(int sig)
   // Here to squelch a compiler warning in a cross-toolchain way.
   (void)sig;
 
-  write(2, sigterm_msg, sizeof(sigterm_msg));
+  (void)!write(2, sigterm_msg, sizeof(sigterm_msg));
   g_sentinel = 1;
 }
 
