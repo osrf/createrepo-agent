@@ -4,7 +4,7 @@ include(FindPackageHandleStandardArgs)
 
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
-  pkg_check_modules(assuan QUIET IMPORTED_TARGET libassuan)
+  pkg_check_modules(assuan QUIET IMPORTED_TARGET GLOBAL libassuan)
   list(GET assuan_LINK_LIBRARIES 0 assuan_LIBRARY)
 endif()
 
