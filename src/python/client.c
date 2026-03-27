@@ -329,6 +329,36 @@ client_sync(ClientObject *self, PyObject *args, PyObject *kwargs)
 }
 
 static PyObject *
+client_touch(ClientObject *self, PyObject *args)
+{
+  PyObject *arches = NULL;
+  gchar *arch_list = NULL;
+  gchar *cmd;
+  PyObject *ret;
+
+  if (!PyArg_ParseTuple(args, "|O", &arches)) {
+    return NULL;
+  }
+
+  if (arches != NULL && arches != Py_None) {
+    arch_list = parse_arch_list(arches);
+    if (NULL == arch_list) {
+      return NULL;
+    }
+  }
+
+  cmd = g_strjoin(" ", "TOUCH", arch_list, NULL);
+  g_free(arch_list);
+  if (!cmd) {
+    return PyErr_NoMemory();
+  }
+
+  ret = execute_transaction(self, cmd);
+  g_free(cmd);
+  return ret;
+}
+
+static PyObject *
 client_enter(ClientObject *self, PyObject *args)
 {
   (void)args;
@@ -360,6 +390,7 @@ static struct PyMethodDef client_methods[] = {
   {"set_invalidate_dependants", (PyCFunction)client_set_invalidate_dependants, METH_VARARGS, NULL},
   {"set_invalidate_family", (PyCFunction)client_set_invalidate_family, METH_VARARGS, NULL},
   {"sync", (PyCFunction)(void(*)(void))client_sync, METH_VARARGS | METH_KEYWORDS, NULL},
+  {"touch", (PyCFunction)client_touch, METH_VARARGS, NULL},
   {"__enter__", (PyCFunction)client_enter, METH_NOARGS, NULL},
   {"__exit__", (PyCFunction)client_disconnect, METH_VARARGS, NULL},
   {NULL, NULL, 0, NULL}
