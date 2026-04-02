@@ -58,7 +58,7 @@ jobs:
           --source-prefix ${{github.workspace}}
           --relative-only
           --demangled-names
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v6
         with:
           token: ${{secrets.CODECOV_TOKEN}}
   yamllint:
