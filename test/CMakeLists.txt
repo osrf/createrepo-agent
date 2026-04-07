@@ -7,6 +7,22 @@ endif()
 
 find_package(GTest REQUIRED)
 
+add_test(NAME fixtures_cleanup COMMAND
+  ${CMAKE_COMMAND} -E remove_directory
+  "${CMAKE_CURRENT_BINARY_DIR}/fixtures")
+
+set_tests_properties(fixtures_cleanup PROPERTIES
+  FIXTURES_SETUP REPO_FIXTURES)
+
+add_test(NAME fixtures_copy COMMAND
+  ${CMAKE_COMMAND} -E copy_directory
+  "${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+  "${CMAKE_CURRENT_BINARY_DIR}/fixtures")
+
+set_tests_properties(fixtures_copy PROPERTIES
+  DEPENDS fixtures_cleanup
+  FIXTURES_SETUP REPO_FIXTURES)
+
 macro(add_cache_test NAME)
   add_executable(test_${NAME} "main.cpp" "test_${NAME}.cpp")
   target_link_libraries(test_${NAME}
@@ -14,6 +30,8 @@ macro(add_cache_test NAME)
     createrepo-cache
     GTest::gtest)
   add_test(NAME ${NAME} COMMAND test_${NAME})
+  set_tests_properties(${NAME} PROPERTIES
+    FIXTURES_REQUIRED REPO_FIXTURES)
 endmacro()
 
 macro(add_integration_test NAME)
@@ -27,8 +45,6 @@ endmacro()
 
 add_test(NAME agent_help COMMAND createrepo-agent --help)
 add_test(NAME agent_version COMMAND createrepo-agent --version)
-
-file(COPY "fixtures" DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 add_cache_test(coordinator)
 add_cache_test(copy_file)
