@@ -26,8 +26,10 @@ TEST_P(smoke, commit) {
 }
 
 TEST_P(smoke, touch) {
+  // Include extra whitespace around command arguments
+  // to check that it's accepted.
   gpg_error_t rc = assuan_transact(
-    client, "TOUCH aarch64 x86_64", NULL, NULL, NULL, NULL, NULL, NULL);
+    client, "TOUCH \t aarch64 \t x86_64 ", NULL, NULL, NULL, NULL, NULL, NULL);
   EXPECT_FALSE(rc);
   rc = assuan_transact(client, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
   EXPECT_FALSE(rc);
