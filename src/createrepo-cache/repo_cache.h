@@ -70,6 +70,9 @@ cra_cache_pattern_remove(
   gboolean family, gboolean dependants);
 
 int
+cra_cache_touch(cra_Cache * cache, const char * arch_name);
+
+int
 cra_cache_flush(cra_Cache * cache);
 
 cra_CacheStats

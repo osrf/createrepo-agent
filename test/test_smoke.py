@@ -131,3 +131,37 @@ def test_sync_pattern_miss(tmp_path):
     arch_path = tmp_path / 'x86_64'
 
     assert not (arch_path / 'Packages' / 'r' / POPULATED_RPM.name).is_file()
+
+
+@pytest.mark.parametrize('arches', (
+    (('x86_64', )),
+    (('aarch64', 'x86_64')),
+))
+def test_touch(tmp_path, arches):
+    with createrepo_agent.Server(str(tmp_path)):
+        with createrepo_agent.Client(str(tmp_path)) as c:
+            with pytest.raises(TypeError):
+                c.touch(1)
+            with pytest.raises(TypeError):
+                c.touch((1,))
+            with pytest.raises(TypeError):
+                c.touch(arches, 1)
+            c.touch()
+            c.touch(None)
+            c.touch(arches)
+            c.commit()
+
+    srpm_path = tmp_path / 'SRPMS'
+    repomd_path = srpm_path / 'repodata' / 'repomd.xml'
+
+    assert repomd_path.is_file()
+
+    for arch in arches:
+        arch_path = tmp_path / arch
+        repomd_path = arch_path / 'repodata' / 'repomd.xml'
+
+        assert repomd_path.is_file()
+
+        repomd_path = arch_path / 'debug' / 'repodata' / 'repomd.xml'
+
+        assert repomd_path.is_file()
