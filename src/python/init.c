@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <assuan.h>
+#include <createrepo_c/createrepo_c.h>
 #include <gpgme.h>
 #include <Python.h>
 
@@ -49,7 +50,15 @@ PyInit_createrepo_agent(void)
 
   gpgrt_check_version(NULL);
   gpgme_check_version(NULL);
+
   assuan_sock_init();
+  Py_AtExit(assuan_sock_deinit);
+
+  cr_xml_dump_init();
+  Py_AtExit(cr_xml_dump_cleanup);
+
+  cr_package_parser_init();
+  Py_AtExit(cr_package_parser_cleanup);
 
   if (PyType_Ready(&Client_Type) < 0) {
     return NULL;

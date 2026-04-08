@@ -81,20 +81,289 @@ set_option(assuan_context_t ctx, const char * option_name)
   return rc;
 }
 
-int
-main(int argc, char * argv[])
+static int
+run(const char *prog, const cra_AgentOptions *opts)
 {
   assuan_fd_t fd;
   assuan_context_t ctx;
   gchar * sockpath;
-  GError * err = NULL;
-  cra_AgentOptions opts = {0};
   pid_t pid;
   gpg_error_t rc;
   size_t i;
   gchar * cmd;
   gchar * arches = NULL;
   cr_Package * pkg;
+
+  if (opts->import) {
+    rc = assuan_new(&ctx);
+    if (rc) {
+      fprintf(stderr, "client context creation failed: %s\n", gpg_strerror(rc));
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    rc = connect_and_start_server(ctx, opts->path, prog);
+    if (rc) {
+      fprintf(stderr, "connection to server failed: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (opts->invalidate_family) {
+      rc = set_option(ctx, "invalidate_family");
+      if (rc) {
+        fprintf(stderr, "option set failed for invalidate_family: %s\n", gpg_strerror(rc));
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    if (opts->invalidate_dependants) {
+      rc = set_option(ctx, "invalidate_dependants");
+      if (rc) {
+        fprintf(stderr, "option set failed for invalidate_dependants: %s\n", gpg_strerror(rc));
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    rc = set_option(ctx, "missing_ok");
+    if (rc) {
+      fprintf(stderr, "option set failed for missing_ok: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (opts->arch && opts->arch[0]) {
+      arches = g_strjoinv(" ", opts->arch);
+    }
+
+    for (i = 0; opts->import[i]; i++) {
+      pkg = cr_package_from_rpm_base(opts->import[i], 0, CR_HDRR_NONE, NULL);
+      if (!pkg) {
+        fprintf(stderr, "failed to parse header for %s\n", opts->import[i]);
+        g_free(arches);
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+
+      cmd = g_strjoin(" ", "REMOVE_NAME", pkg->name, arches, NULL);
+      if (!cmd) {
+        fprintf(stderr, "failed to concatenate removal command\n");
+        g_free(arches);
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+
+      rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
+      g_free(cmd);
+      if (rc) {
+        fprintf(
+          stderr, "package remove command failed for %s: %s\n",
+          opts->import[i], gpg_strerror(rc));
+        g_free(arches);
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+
+      cr_package_free(pkg);
+    }
+
+    for (i = 0; opts->import[i]; i++) {
+      cmd = g_strjoin(" ", "ADD", opts->import[i], arches, NULL);
+      if (!cmd) {
+        fprintf(stderr, "failed to concatenate add command\n");
+        g_free(arches);
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+
+      rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
+      g_free(cmd);
+      if (rc) {
+        fprintf(
+          stderr, "package add command failed for %s: %s\n",
+          opts->import[i], gpg_strerror(rc));
+        g_free(arches);
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    g_free(arches);
+
+    rc = assuan_transact(ctx, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
+    if (rc) {
+      fprintf(
+        stderr, "repository commit command failed: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    assuan_release(ctx);
+    return CRA_EXIT_SUCCESS;
+  } else if (opts->sync) {
+    rc = assuan_new(&ctx);
+    if (rc) {
+      fprintf(stderr, "client context creation failed: %s\n", gpg_strerror(rc));
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    rc = connect_and_start_server(ctx, opts->path, prog);
+    if (rc) {
+      fprintf(stderr, "connection to server failed: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (opts->invalidate_family) {
+      rc = set_option(ctx, "invalidate_family");
+      if (rc) {
+        fprintf(stderr, "option set failed for invalidate_family: %s\n", gpg_strerror(rc));
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    if (opts->invalidate_dependants) {
+      rc = set_option(ctx, "invalidate_dependants");
+      if (rc) {
+        fprintf(stderr, "option set failed for invalidate_dependants: %s\n", gpg_strerror(rc));
+        assuan_release(ctx);
+        return CRA_EXIT_GENERAL_ERROR;
+      }
+    }
+
+    if (opts->arch && opts->arch[0]) {
+      arches = g_strjoinv(" ", opts->arch);
+    }
+
+    if (opts->sync_pattern) {
+      cmd = g_strjoin(" ", "SYNC_PATTERN", opts->sync, opts->sync_pattern, arches, NULL);
+    } else {
+      cmd = g_strjoin(" ", "SYNC", opts->sync, arches, NULL);
+    }
+
+    g_free(arches);
+
+    if (!cmd) {
+      fprintf(stderr, "failed to concatenate sync command\n");
+      assuan_release(ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
+    g_free(cmd);
+    if (rc) {
+      fprintf(
+        stderr, "sync command failed: %s\n",
+        gpg_strerror(rc));
+      assuan_release(ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    rc = assuan_transact(ctx, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
+    if (rc) {
+      fprintf(
+        stderr, "repository commit command failed: %s\n", gpg_strerror(rc));
+      assuan_release(ctx);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    assuan_release(ctx);
+    return CRA_EXIT_SUCCESS;
+  }
+
+  sockpath = g_strconcat(opts->path, CRA_SOCK_NAME, NULL);
+  if (!sockpath) {
+    fprintf(stderr, "failed to concatenate repo path\n");
+    return CRA_EXIT_GENERAL_ERROR;
+  }
+
+  if (!opts->daemon && !opts->server) {
+    if (try_server(sockpath)) {
+      printf("no createrepo-agent running at %s\n", opts->path);
+    } else {
+      printf("createrepo-agent running and available at %s\n", opts->path);
+    }
+    g_free(sockpath);
+    return CRA_EXIT_SUCCESS;
+  }
+
+  fd = create_server_socket(sockpath);
+  if (fd == ASSUAN_INVALID_FD && errno == EADDRINUSE) {
+    if (try_server(sockpath)) {
+      // TODO(cottsay): Better handling of redirected socket
+      remove(sockpath);
+      fd = create_server_socket(sockpath);
+    } else {
+      errno = EADDRINUSE;
+    }
+  }
+  if (fd == ASSUAN_INVALID_FD) {
+    fprintf(stderr, "failed to create socket at %s: %s\n", sockpath, strerror(errno));
+    g_free(sockpath);
+    return errno == EADDRINUSE ? CRA_EXIT_IN_USE : CRA_EXIT_GENERAL_ERROR;
+  }
+
+  g_free(sockpath);
+
+  if (opts->daemon) {
+    fflush(NULL);
+
+    pid = fork();
+    if (-1 == pid) {
+      fprintf(stderr, "failed to fork daemon process: %s", strerror(errno));
+      assuan_sock_close(fd);
+      return CRA_EXIT_GENERAL_ERROR;
+    } else if (pid) {
+      assuan_sock_close(fd);
+      return CRA_EXIT_SUCCESS;
+    }
+
+    if (chdir(opts->path)) {
+      fprintf(stderr, "failed to change to repository directory: %s\n", strerror(errno));
+      assuan_sock_close(fd);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (setsid() < 0) {
+      fprintf(stderr, "failed to create new session: %s\n", strerror(errno));
+      assuan_sock_close(fd);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (close(STDIN_FILENO) || open("/dev/null", O_RDONLY) != STDIN_FILENO) {
+      fprintf(stderr, "failed to reopen STDIN as /dev/null: %s", strerror(errno));
+      assuan_sock_close(fd);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (close(STDOUT_FILENO) || open("/dev/null", O_WRONLY) != STDOUT_FILENO) {
+      fprintf(stderr, "failed to reopen STDOUT as /dev/null: %s", strerror(errno));
+      assuan_sock_close(fd);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+
+    if (close(STDERR_FILENO) || open("/dev/null", O_RDWR) != STDERR_FILENO) {
+      assuan_sock_close(fd);
+      return CRA_EXIT_GENERAL_ERROR;
+    }
+  }
+
+  ignore_sigpipe();
+  attach_shutdown();
+
+  command_handler(fd, opts->path, &g_sentinel);
+
+  return CRA_EXIT_SUCCESS;
+}
+
+int
+main(int argc, char * argv[])
+{
+  GError * err = NULL;
+  cra_AgentOptions opts = {0};
+  int rc;
 
   GOptionContext * option_ctx = g_option_context_new(NULL);
   g_option_context_set_main_group(option_ctx, cra_get_option_group(&opts));
@@ -114,331 +383,15 @@ main(int argc, char * argv[])
   gpgrt_check_version(NULL);
   gpgme_check_version(NULL);
   assuan_sock_init();
+  cr_xml_dump_init();
+  cr_package_parser_init();
 
-  if (opts.import) {
-    rc = assuan_new(&ctx);
-    if (rc) {
-      fprintf(stderr, "client context creation failed: %s\n", gpg_strerror(rc));
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
+  rc = run(argv[0], &opts);
 
-    rc = connect_and_start_server(ctx, opts.path, argv[0]);
-    if (rc) {
-      fprintf(stderr, "connection to server failed: %s\n", gpg_strerror(rc));
-      assuan_release(ctx);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    if (opts.invalidate_family) {
-      rc = set_option(ctx, "invalidate_family");
-      if (rc) {
-        fprintf(stderr, "option set failed for invalidate_family: %s\n", gpg_strerror(rc));
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-    }
-
-    if (opts.invalidate_dependants) {
-      rc = set_option(ctx, "invalidate_dependants");
-      if (rc) {
-        fprintf(stderr, "option set failed for invalidate_dependants: %s\n", gpg_strerror(rc));
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-    }
-
-    rc = set_option(ctx, "missing_ok");
-    if (rc) {
-      fprintf(stderr, "option set failed for missing_ok: %s\n", gpg_strerror(rc));
-      assuan_release(ctx);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    if (opts.arch && opts.arch[0]) {
-      arches = g_strjoinv(" ", opts.arch);
-    }
-
-    for (i = 0; opts.import[i]; i++) {
-      pkg = cr_package_from_rpm_base(opts.import[i], 0, CR_HDRR_NONE, NULL);
-      if (!pkg) {
-        fprintf(stderr, "failed to parse header for %s\n", opts.import[i]);
-        g_free(arches);
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-
-      cmd = g_strjoin(" ", "REMOVE_NAME", pkg->name, arches, NULL);
-      if (!cmd) {
-        fprintf(stderr, "failed to concatenate removal command\n");
-        g_free(arches);
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-
-      rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
-      g_free(cmd);
-      if (rc) {
-        fprintf(
-          stderr, "package remove command failed for %s: %s\n",
-          opts.import[i], gpg_strerror(rc));
-        g_free(arches);
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-
-      cr_package_free(pkg);
-    }
-
-    for (i = 0; opts.import[i]; i++) {
-      cmd = g_strjoin(" ", "ADD", opts.import[i], arches, NULL);
-      if (!cmd) {
-        fprintf(stderr, "failed to concatenate add command\n");
-        g_free(arches);
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-
-      rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
-      g_free(cmd);
-      if (rc) {
-        fprintf(
-          stderr, "package add command failed for %s: %s\n",
-          opts.import[i], gpg_strerror(rc));
-        g_free(arches);
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-    }
-
-    g_free(arches);
-
-    rc = assuan_transact(ctx, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
-    if (rc) {
-      fprintf(
-        stderr, "repository commit command failed: %s\n", gpg_strerror(rc));
-      assuan_release(ctx);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    assuan_release(ctx);
-    assuan_sock_deinit();
-    g_option_context_free(option_ctx);
-    return CRA_EXIT_SUCCESS;
-  } else if (opts.sync) {
-    rc = assuan_new(&ctx);
-    if (rc) {
-      fprintf(stderr, "client context creation failed: %s\n", gpg_strerror(rc));
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    rc = connect_and_start_server(ctx, opts.path, argv[0]);
-    if (rc) {
-      fprintf(stderr, "connection to server failed: %s\n", gpg_strerror(rc));
-      assuan_release(ctx);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    if (opts.invalidate_family) {
-      rc = set_option(ctx, "invalidate_family");
-      if (rc) {
-        fprintf(stderr, "option set failed for invalidate_family: %s\n", gpg_strerror(rc));
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-    }
-
-    if (opts.invalidate_dependants) {
-      rc = set_option(ctx, "invalidate_dependants");
-      if (rc) {
-        fprintf(stderr, "option set failed for invalidate_dependants: %s\n", gpg_strerror(rc));
-        assuan_release(ctx);
-        assuan_sock_deinit();
-        g_option_context_free(option_ctx);
-        return CRA_EXIT_GENERAL_ERROR;
-      }
-    }
-
-    if (opts.arch && opts.arch[0]) {
-      arches = g_strjoinv(" ", opts.arch);
-    }
-
-    if (opts.sync_pattern) {
-      cmd = g_strjoin(" ", "SYNC_PATTERN", opts.sync, opts.sync_pattern, arches, NULL);
-    } else {
-      cmd = g_strjoin(" ", "SYNC", opts.sync, arches, NULL);
-    }
-
-    g_free(arches);
-
-    if (!cmd) {
-      fprintf(stderr, "failed to concatenate sync command\n");
-      assuan_release(ctx);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    rc = assuan_transact(ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
-    g_free(cmd);
-    if (rc) {
-      fprintf(
-        stderr, "sync command failed: %s\n",
-        gpg_strerror(rc));
-      assuan_release(ctx);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    rc = assuan_transact(ctx, "COMMIT", NULL, NULL, NULL, NULL, NULL, NULL);
-    if (rc) {
-      fprintf(
-        stderr, "repository commit command failed: %s\n", gpg_strerror(rc));
-      assuan_release(ctx);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    assuan_release(ctx);
-    assuan_sock_deinit();
-    g_option_context_free(option_ctx);
-    return CRA_EXIT_SUCCESS;
-  }
-
-  sockpath = g_strconcat(opts.path, CRA_SOCK_NAME, NULL);
-  if (!sockpath) {
-    fprintf(stderr, "failed to concatenate repo path\n");
-    assuan_sock_deinit();
-    g_option_context_free(option_ctx);
-    return CRA_EXIT_GENERAL_ERROR;
-  }
-
-  if (!opts.daemon && !opts.server) {
-    if (try_server(sockpath)) {
-      printf("no createrepo-agent running at %s\n", opts.path);
-    } else {
-      printf("createrepo-agent running and available at %s\n", opts.path);
-    }
-    g_free(sockpath);
-    assuan_sock_deinit();
-    g_option_context_free(option_ctx);
-    return CRA_EXIT_SUCCESS;
-  }
-
-  fd = create_server_socket(sockpath);
-  if (fd == ASSUAN_INVALID_FD && errno == EADDRINUSE) {
-    if (try_server(sockpath)) {
-      // TODO(cottsay): Better handling of redirected socket
-      remove(sockpath);
-      fd = create_server_socket(sockpath);
-    } else {
-      errno = EADDRINUSE;
-    }
-  }
-  if (fd == ASSUAN_INVALID_FD) {
-    fprintf(stderr, "failed to create socket at %s: %s\n", sockpath, strerror(errno));
-    g_free(sockpath);
-    assuan_sock_deinit();
-    g_option_context_free(option_ctx);
-    return errno == EADDRINUSE ? CRA_EXIT_IN_USE : CRA_EXIT_GENERAL_ERROR;
-  }
-
-  g_free(sockpath);
-
-  if (opts.daemon) {
-    fflush(NULL);
-
-    pid = fork();
-    if (-1 == pid) {
-      fprintf(stderr, "failed to fork daemon process: %s", strerror(errno));
-      assuan_sock_close(fd);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    } else if (pid) {
-      assuan_sock_close(fd);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_SUCCESS;
-    }
-
-    if (chdir(opts.path)) {
-      fprintf(stderr, "failed to change to repository directory: %s\n", strerror(errno));
-      assuan_sock_close(fd);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    if (setsid() < 0) {
-      fprintf(stderr, "failed to create new session: %s\n", strerror(errno));
-      assuan_sock_close(fd);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    if (close(STDIN_FILENO) || open("/dev/null", O_RDONLY) != STDIN_FILENO) {
-      fprintf(stderr, "failed to reopen STDIN as /dev/null: %s", strerror(errno));
-      assuan_sock_close(fd);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    if (close(STDOUT_FILENO) || open("/dev/null", O_WRONLY) != STDOUT_FILENO) {
-      fprintf(stderr, "failed to reopen STDOUT as /dev/null: %s", strerror(errno));
-      assuan_sock_close(fd);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-
-    if (close(STDERR_FILENO) || open("/dev/null", O_RDWR) != STDERR_FILENO) {
-      assuan_sock_close(fd);
-      assuan_sock_deinit();
-      g_option_context_free(option_ctx);
-      return CRA_EXIT_GENERAL_ERROR;
-    }
-  }
-
-  ignore_sigpipe();
-  attach_shutdown();
-
-  command_handler(fd, opts.path, &g_sentinel);
-
+  cr_package_parser_cleanup();
+  cr_xml_dump_cleanup();
   assuan_sock_deinit();
-
   g_option_context_free(option_ctx);
 
-  return CRA_EXIT_SUCCESS;
+  return rc;
 }
