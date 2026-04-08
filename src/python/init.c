@@ -25,6 +25,8 @@ void free_createrepo_agent(void *self)
 {
   (void)self;
 
+  cr_package_parser_cleanup();
+  cr_xml_dump_cleanup();
   assuan_sock_deinit();
 }
 
@@ -52,13 +54,8 @@ PyInit_createrepo_agent(void)
   gpgme_check_version(NULL);
 
   assuan_sock_init();
-  Py_AtExit(assuan_sock_deinit);
-
   cr_xml_dump_init();
-  Py_AtExit(cr_xml_dump_cleanup);
-
   cr_package_parser_init();
-  Py_AtExit(cr_package_parser_cleanup);
 
   if (PyType_Ready(&Client_Type) < 0) {
     return NULL;
