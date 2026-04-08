@@ -223,6 +223,7 @@ PyTypeObject Server_Type = {
   .tp_dealloc = (destructor)server_dealloc,
   .tp_init = (initproc)server_init,
   .tp_repr = (reprfunc)server_repr,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_methods = server_methods,
   .tp_getset = server_properties,
 };
