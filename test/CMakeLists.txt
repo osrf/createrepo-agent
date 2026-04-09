@@ -30,8 +30,6 @@ macro(add_cache_test NAME)
     createrepo-cache
     GTest::gtest)
   add_test(NAME ${NAME} COMMAND test_${NAME})
-  set_tests_properties(${NAME} PROPERTIES
-    FIXTURES_REQUIRED REPO_FIXTURES)
 endmacro()
 
 macro(add_integration_test NAME)
@@ -41,6 +39,8 @@ macro(add_integration_test NAME)
     createrepo-agent-lib
     GTest::gtest)
   add_test(NAME ${NAME} COMMAND test_${NAME})
+  set_tests_properties(${NAME} PROPERTIES
+    FIXTURES_REQUIRED REPO_FIXTURES)
 endmacro()
 
 add_test(NAME agent_help COMMAND createrepo-agent --help)
