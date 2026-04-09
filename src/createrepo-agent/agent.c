@@ -362,8 +362,9 @@ int
 main(int argc, char * argv[])
 {
   GError * err = NULL;
+  int exit_code;
   cra_AgentOptions opts = {0};
-  int rc;
+  gpg_error_t rc;
 
   GOptionContext * option_ctx = g_option_context_new(NULL);
   g_option_context_set_main_group(option_ctx, cra_get_option_group(&opts));
@@ -382,16 +383,23 @@ main(int argc, char * argv[])
 
   gpgrt_check_version(NULL);
   gpgme_check_version(NULL);
-  assuan_sock_init();
+
+  rc = assuan_sock_init();
+  if (rc) {
+    fprintf(stderr, "failed to initialize assuan sockets: %s\n", gpg_strerror(rc));
+    g_option_context_free(option_ctx);
+    return CRA_EXIT_GENERAL_ERROR;
+  }
+
   cr_xml_dump_init();
   cr_package_parser_init();
 
-  rc = run(argv[0], &opts);
+  exit_code = run(argv[0], &opts);
 
   cr_package_parser_cleanup();
   cr_xml_dump_cleanup();
   assuan_sock_deinit();
   g_option_context_free(option_ctx);
 
-  return rc;
+  return exit_code;
 }
