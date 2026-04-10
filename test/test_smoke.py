@@ -235,3 +235,25 @@ def test_remove_pattern(mutable_populated_repo):
         arch_path = mutable_populated_repo / arch
         pkg_path = arch_path / 'Packages' / 'r' / POPULATED_RPM.name
         assert not pkg_path.is_file()
+
+
+@pytest.mark.parametrize('option_name', (
+    'invalidate_dependants',
+    'invalidate_family',
+    'missing_ok',
+))
+def test_option_arguments(tmp_path, option_name):
+    with createrepo_agent.Server(str(tmp_path)):
+        with createrepo_agent.Client(str(tmp_path)) as c:
+            setter = getattr(c, f'set_{option_name}')
+
+            setter(True)
+            setter(False)
+
+            # Must provide value
+            with pytest.raises(TypeError):
+                setter()
+
+            # Only one argument accepted
+            with pytest.raises(TypeError):
+                setter(True, None)
