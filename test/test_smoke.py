@@ -2,6 +2,7 @@
 # Licensed under the Apache License, Version 2.0
 
 from pathlib import Path
+import shutil
 
 import createrepo_agent
 import pytest
@@ -16,6 +17,15 @@ POPULATED_RPM = Path(
     'r',
     'ros-dev-tools-1.0.1-1.el9.noarch.rpm',
 )
+
+
+@pytest.fixture
+def mutable_populated_repo(tmp_path):
+    repo_path = tmp_path / 'populated'
+    shutil.copytree(
+        str(POPULATED_REPO), str(repo_path),
+        ignore=shutil.ignore_patterns('repomd.xml.asc'))
+    yield repo_path
 
 
 def test_version():
@@ -131,3 +141,119 @@ def test_sync_pattern_miss(tmp_path):
     arch_path = tmp_path / 'x86_64'
 
     assert not (arch_path / 'Packages' / 'r' / POPULATED_RPM.name).is_file()
+
+
+def test_remove_name(mutable_populated_repo):
+    arches = ('x86_64', )
+    with createrepo_agent.Server(str(mutable_populated_repo)):
+        with createrepo_agent.Client(str(mutable_populated_repo)) as c:
+            with pytest.raises(TypeError):
+                c.remove_name(1)
+            with pytest.raises(TypeError):
+                c.remove_name('ros-dev-tools', (1,))
+            with pytest.raises(TypeError):
+                c.remove_name('ros-dev-tools', arches, 1)
+
+            # Omitting arches targets SRPMS which has no such package
+            c.remove_name('ros-dev-tools')
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+            # Function treats 'None' arches the same as omission
+            c.remove_name('ros-dev-tools', None)
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+            # Remove package
+            c.remove_name('ros-dev-tools', arches)
+            c.commit()
+
+            # Try to remove again - expected to fail
+            c.remove_name('ros-dev-tools', arches)
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+            # Explicitly allow no matches
+            c.set_missing_ok(True)
+            c.remove_name('ros-dev-tools', arches)
+            c.commit()
+
+            # ...and explicitly disallow
+            c.set_missing_ok(False)
+            c.remove_name('ros-dev-tools', arches)
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+    for arch in arches:
+        arch_path = mutable_populated_repo / arch
+        pkg_path = arch_path / 'Packages' / 'r' / POPULATED_RPM.name
+        assert not pkg_path.is_file()
+
+
+def test_remove_pattern(mutable_populated_repo):
+    arches = ('x86_64', )
+    with createrepo_agent.Server(str(mutable_populated_repo)):
+        with createrepo_agent.Client(str(mutable_populated_repo)) as c:
+            with pytest.raises(TypeError):
+                c.remove_pattern(1)
+            with pytest.raises(TypeError):
+                c.remove_pattern('ros-.*', (1,))
+            with pytest.raises(TypeError):
+                c.remove_pattern('ros-.*', arches, 1)
+
+            # Omitting arches targets SRPMS which has no such package
+            c.remove_pattern('ros-.*')
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+            # Function treats 'None' arches the same as omission
+            c.remove_pattern('ros-.*', None)
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+            # Remove package
+            c.remove_pattern('ros-.*', arches)
+            c.commit()
+
+            # Try to remove again - expected to fail
+            c.remove_pattern('ros-.*', arches)
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+            # Explicitly allow no matches
+            c.set_missing_ok(True)
+            c.remove_pattern('ros-.*', arches)
+            c.commit()
+
+            # ...and explicitly disallow
+            c.set_missing_ok(False)
+            c.remove_pattern('ros-.*', arches)
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+    for arch in arches:
+        arch_path = mutable_populated_repo / arch
+        pkg_path = arch_path / 'Packages' / 'r' / POPULATED_RPM.name
+        assert not pkg_path.is_file()
+
+
+@pytest.mark.parametrize('option_name', (
+    'invalidate_dependants',
+    'invalidate_family',
+    'missing_ok',
+))
+def test_option_arguments(tmp_path, option_name):
+    with createrepo_agent.Server(str(tmp_path)):
+        with createrepo_agent.Client(str(tmp_path)) as c:
+            setter = getattr(c, f'set_{option_name}')
+
+            setter(True)
+            setter(False)
+
+            # Must provide value
+            with pytest.raises(TypeError):
+                setter()
+
+            # Only one argument accepted
+            with pytest.raises(TypeError):
+                setter(True, None)
