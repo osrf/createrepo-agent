@@ -127,6 +127,7 @@ if(WITH_PYTHON)
       CONTENT "Metadata-Version: 1.1\nName: createrepo-agent\nVersion: ${CRA_VERSION}\n")
     string(JOIN "\n" RECORD_CONTENT
         "$<TARGET_FILE_NAME:createrepo_agent>,,"
+        "createrepo_agent-stubs/__init__.pyi,,"
         "${DISTINFO_NAME}/INSTALLER,,"
         "${DISTINFO_NAME}/METADATA,,"
         "${DISTINFO_NAME}/RECORD,,"
@@ -137,7 +138,7 @@ if(WITH_PYTHON)
       CONTENT "${RECORD_CONTENT}\n")
     file(GENERATE
       OUTPUT "${DISTINFO_DIR}/top_level.txt"
-      CONTENT "createrepo_agent\n")
+      CONTENT "createrepo_agent\ncreaterepo_agent-stubs\n")
     install(DIRECTORY ${DISTINFO_DIR}
       DESTINATION ${PYTHON_INSTALL_DIR}
       COMPONENT python)
@@ -146,6 +147,10 @@ if(WITH_PYTHON)
   install(TARGETS createrepo_agent
     RUNTIME DESTINATION ${PYTHON_INSTALL_DIR}
     LIBRARY DESTINATION ${PYTHON_INSTALL_DIR}
+    COMPONENT python)
+  install(FILES src/python/createrepo_agent.pyi
+    DESTINATION ${PYTHON_INSTALL_DIR}/createrepo_agent-stubs
+    RENAME __init__.pyi
     COMPONENT python)
 endif()
 
