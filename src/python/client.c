@@ -378,6 +378,7 @@ PyTypeObject Client_Type = {
   .tp_dealloc = (destructor)client_dealloc,
   .tp_init = (initproc)client_init,
   .tp_repr = (reprfunc)client_repr,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_methods = client_methods,
   .tp_getset = client_properties,
 };
