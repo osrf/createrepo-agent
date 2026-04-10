@@ -154,6 +154,16 @@ def test_remove_name(mutable_populated_repo):
             with pytest.raises(TypeError):
                 c.remove_name('ros-dev-tools', arches, 1)
 
+            # Omitting arches targets SRPMS which has no such package
+            c.remove_name('ros-dev-tools')
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+            # Function treats 'None' arches the same as omission
+            c.remove_name('ros-dev-tools', None)
+            with pytest.raises(RuntimeError):
+                c.commit()
+
             # Remove package
             c.remove_name('ros-dev-tools', arches)
             c.commit()
@@ -167,6 +177,12 @@ def test_remove_name(mutable_populated_repo):
             c.set_missing_ok(True)
             c.remove_name('ros-dev-tools', arches)
             c.commit()
+
+            # ...and explicitly disallow
+            c.set_missing_ok(False)
+            c.remove_name('ros-dev-tools', arches)
+            with pytest.raises(RuntimeError):
+                c.commit()
 
     for arch in arches:
         arch_path = mutable_populated_repo / arch
@@ -185,6 +201,16 @@ def test_remove_pattern(mutable_populated_repo):
             with pytest.raises(TypeError):
                 c.remove_pattern('ros-.*', arches, 1)
 
+            # Omitting arches targets SRPMS which has no such package
+            c.remove_pattern('ros-.*')
+            with pytest.raises(RuntimeError):
+                c.commit()
+
+            # Function treats 'None' arches the same as omission
+            c.remove_pattern('ros-.*', None)
+            with pytest.raises(RuntimeError):
+                c.commit()
+
             # Remove package
             c.remove_pattern('ros-.*', arches)
             c.commit()
@@ -198,6 +224,12 @@ def test_remove_pattern(mutable_populated_repo):
             c.set_missing_ok(True)
             c.remove_pattern('ros-.*', arches)
             c.commit()
+
+            # ...and explicitly disallow
+            c.set_missing_ok(False)
+            c.remove_pattern('ros-.*', arches)
+            with pytest.raises(RuntimeError):
+                c.commit()
 
     for arch in arches:
         arch_path = mutable_populated_repo / arch
