@@ -23,6 +23,7 @@ jobs:
           libgtest-dev
           make
           python3-pytest
+          python3-pytest-cov
           valgrind
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -45,6 +46,11 @@ jobs:
           -j2
           -D ExperimentalMemCheck
         working-directory: ${{github.workspace}}/build
+        env:
+          PYTEST_ADDOPTS: >
+            --cov ${{github.workspace}}
+            --cov-branch
+            --cov-report xml
       - uses: actions/upload-artifact@v7
         if: ${{ failure() }}
         with:
