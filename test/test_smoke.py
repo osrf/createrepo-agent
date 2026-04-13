@@ -68,7 +68,7 @@ def test_server_socket_collision(tmp_path):
     with createrepo_agent.Server(str(tmp_path)):
         with pytest.raises(OSError):
             with createrepo_agent.Server(str(tmp_path)):
-                pass
+                pass  # pragma: no cover
 
 
 def test_sync_all(tmp_path):
