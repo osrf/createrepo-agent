@@ -30,6 +30,7 @@ typedef struct
   gchar * name;
   volatile sig_atomic_t sentinel;
   GThread * thread;
+  GRWLock lock;
 } ServerObject;
 
 static PyObject *
@@ -37,7 +38,13 @@ server_shutdown_thread(ServerObject *self, PyObject *args);
 
 static void * server_thread(ServerObject *self)
 {
-  command_handler(self->fd, self->name, &self->sentinel);
+  g_rw_lock_reader_lock(&self->lock);
+
+  if (0 == self->sentinel && ASSUAN_INVALID_FD != self->fd) {
+    command_handler(self->fd, self->name, &self->sentinel);
+  }
+
+  g_rw_lock_reader_unlock(&self->lock);
 
   return NULL;
 }
@@ -54,6 +61,7 @@ server_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     self->name = NULL;
     self->sentinel = 0;
     self->thread = NULL;
+    g_rw_lock_init(&self->lock);
   }
   return (PyObject *)self;
 }
@@ -72,15 +80,30 @@ server_init(ServerObject *self, PyObject *args, PyObject *kwds)
     return -1;
   }
 
+  g_rw_lock_reader_lock(&self->lock);
+
+  if (ASSUAN_INVALID_FD != self->fd) {
+    PyErr_SetString(PyExc_RuntimeError, "Server is already active");
+    g_rw_lock_reader_unlock(&self->lock);
+    return -1;
+  }
+
+  g_rw_lock_reader_unlock(&self->lock);
+
+  g_rw_lock_writer_lock(&self->lock);
+
   if (NULL != self->name) {
     g_free(self->name);
   }
 
   self->name = g_strdup(name);
   if (NULL == self->name) {
+    g_rw_lock_writer_unlock(&self->lock);
     PyErr_NoMemory();
     return -1;
   }
+
+  g_rw_lock_writer_unlock(&self->lock);
 
   return 0;
 }
@@ -90,6 +113,7 @@ server_dealloc(ServerObject *self)
 {
   Py_XDECREF(server_shutdown_thread(self, NULL));
 
+  g_rw_lock_clear(&self->lock);
   if (NULL != self->name) {
     g_free(self->name);
   }
@@ -100,8 +124,14 @@ server_dealloc(ServerObject *self)
 static PyObject *
 server_repr(ServerObject *self)
 {
-  return PyUnicode_FromFormat(
+  g_rw_lock_reader_lock(&self->lock);
+
+  PyObject *res = PyUnicode_FromFormat(
     "<createrepo_agent.Server name='%s'>", self->name);
+
+  g_rw_lock_reader_unlock(&self->lock);
+
+  return res;
 }
 
 static PyObject *
@@ -109,7 +139,30 @@ server_shutdown_thread(ServerObject *self, PyObject *args)
 {
   (void)args;
 
+  g_rw_lock_reader_lock(&self->lock);
+
+  if (ASSUAN_INVALID_FD == self->fd && NULL == self->thread) {
+    g_rw_lock_reader_unlock(&self->lock);
+    Py_RETURN_NONE;
+  }
+
   self->sentinel = 1;
+
+  if (ASSUAN_INVALID_FD != self->fd) {
+    shutdown(self->fd, SHUT_RD);
+  }
+
+  Py_BEGIN_ALLOW_THREADS
+
+  if (NULL != self->thread) {
+    g_thread_ref(self->thread);
+    g_thread_join(self->thread);
+  }
+
+  g_rw_lock_reader_unlock(&self->lock);
+
+  g_rw_lock_writer_lock(&self->lock);
+
   if (ASSUAN_INVALID_FD != self->fd) {
     shutdown(self->fd, SHUT_RD);
     self->fd = ASSUAN_INVALID_FD;
@@ -122,6 +175,10 @@ server_shutdown_thread(ServerObject *self, PyObject *args)
 
   self->sentinel = 0;
 
+  g_rw_lock_writer_unlock(&self->lock);
+
+  Py_END_ALLOW_THREADS
+
   Py_RETURN_NONE;
 }
 
@@ -130,8 +187,11 @@ server_start_thread(ServerObject *self, PyObject *args)
 {
   (void)args;
 
+  g_rw_lock_reader_lock(&self->lock);
+
   if (ASSUAN_INVALID_FD != self->fd) {
     PyErr_SetString(PyExc_RuntimeError, "Server is already active");
+    g_rw_lock_reader_unlock(&self->lock);
     return NULL;
   }
 
@@ -143,10 +203,15 @@ server_start_thread(ServerObject *self, PyObject *args)
     g_str_has_suffix(self->name, "/") ? "" : "/",
     CRA_SOCK_NAME,
     NULL);
+  g_rw_lock_reader_unlock(&self->lock);
   g_free(cwd);
   if (NULL == sockpath) {
     return PyErr_NoMemory();
   }
+
+  Py_BEGIN_ALLOW_THREADS
+
+  g_rw_lock_writer_lock(&self->lock);
 
   self->fd = create_server_socket(sockpath);
   if (self->fd == ASSUAN_INVALID_FD && errno == EADDRINUSE) {
@@ -159,7 +224,11 @@ server_start_thread(ServerObject *self, PyObject *args)
       errno = EADDRINUSE;
     }
   }
+
+  Py_END_ALLOW_THREADS
+
   if (ASSUAN_INVALID_FD == self->fd) {
+    g_rw_lock_writer_unlock(&self->lock);
     PyErr_SetFromErrnoWithFilename(PyExc_OSError, sockpath);
     g_free(sockpath);
     return NULL;
@@ -171,9 +240,12 @@ server_start_thread(ServerObject *self, PyObject *args)
   if (!self->thread) {
     assuan_sock_close(self->fd);
     self->fd = ASSUAN_INVALID_FD;
+    g_rw_lock_writer_unlock(&self->lock);
     PyErr_SetString(PyExc_RuntimeError, "Failed to start thread");
     return NULL;
   }
+
+  g_rw_lock_writer_unlock(&self->lock);
 
   Py_RETURN_NONE;
 }
@@ -199,7 +271,13 @@ server_get_name(ServerObject *self, void *closure)
 {
   (void)closure;
 
-  return PyUnicode_FromString(self->name);
+  g_rw_lock_reader_lock(&self->lock);
+
+  PyObject *res = PyUnicode_FromString(self->name);
+
+  g_rw_lock_reader_unlock(&self->lock);
+
+  return res;
 }
 
 static struct PyMethodDef server_methods[] = {

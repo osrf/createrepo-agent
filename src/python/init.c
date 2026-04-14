@@ -71,5 +71,9 @@ PyInit_createrepo_agent(void)
   PyModule_AddIntConstant(m, "EXIT_USAGE", CRA_EXIT_USAGE);
   PyModule_AddIntConstant(m, "EXIT_IN_USE", CRA_EXIT_IN_USE);
 
+#ifdef Py_GIL_DISABLED
+  PyUnstable_Module_SetGIL(m, Py_MOD_GIL_NOT_USED);
+#endif
+
   return m;
 }

@@ -24,6 +24,7 @@ typedef struct
   PyObject_HEAD
   gchar * name;
   assuan_context_t ctx;
+  GRWLock lock;
 } ClientObject;
 
 static PyObject *
@@ -39,6 +40,7 @@ client_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
   if (self) {
     self->ctx = NULL;
     self->name = NULL;
+    g_rw_lock_init(&self->lock);
   }
   return (PyObject *)self;
 }
@@ -57,15 +59,20 @@ client_init(ClientObject *self, PyObject *args, PyObject *kwds)
     return -1;
   }
 
+  g_rw_lock_writer_lock(&self->lock);
+
   if (NULL != self->name) {
     g_free(self->name);
   }
 
   self->name = g_strdup(name);
   if (NULL == self->name) {
+    g_rw_lock_writer_unlock(&self->lock);
     PyErr_NoMemory();
     return -1;
   }
+
+  g_rw_lock_writer_unlock(&self->lock);
 
   return 0;
 }
@@ -74,6 +81,7 @@ client_dealloc(ClientObject *self)
 {
   Py_XDECREF(client_disconnect(self, NULL));
 
+  g_rw_lock_clear(&self->lock);
   if (NULL != self->name) {
     g_free(self->name);
   }
@@ -84,8 +92,14 @@ client_dealloc(ClientObject *self)
 static PyObject *
 client_repr(ClientObject *self)
 {
-  return PyUnicode_FromFormat(
+  g_rw_lock_reader_lock(&self->lock);
+
+  PyObject *res = PyUnicode_FromFormat(
     "<createrepo_agent.Client name='%s'>", self->name);
+
+  g_rw_lock_reader_unlock(&self->lock);
+
+  return res;
 }
 
 static PyObject *
@@ -93,7 +107,16 @@ execute_transaction(ClientObject *self, const char * cmd)
 {
   gpg_error_t rc;
 
+  Py_BEGIN_ALLOW_THREADS
+
+  g_rw_lock_writer_lock(&self->lock);
+
   rc = assuan_transact(self->ctx, cmd, NULL, NULL, NULL, NULL, NULL, NULL);
+
+  g_rw_lock_writer_unlock(&self->lock);
+
+  Py_END_ALLOW_THREADS
+
   if (rc) {
     PyErr_Format(PyExc_RuntimeError, "Transaction failed: %s", gpg_strerror(rc));
     return NULL;
@@ -198,6 +221,8 @@ client_connect(ClientObject *self, PyObject *args)
 
   gpg_error_t rc;
 
+  g_rw_lock_writer_lock(&self->lock);
+
   gchar *cwd = g_path_is_absolute(self->name) ? NULL : g_get_current_dir();
   gchar *sockpath = g_strconcat(
     cwd ? cwd : "",
@@ -208,12 +233,14 @@ client_connect(ClientObject *self, PyObject *args)
     NULL);
   g_free(cwd);
   if (NULL == sockpath) {
+    g_rw_lock_writer_unlock(&self->lock);
     return PyErr_NoMemory();
   }
 
   assuan_release(self->ctx);
   rc = assuan_new(&self->ctx);
   if (rc) {
+    g_rw_lock_writer_unlock(&self->lock);
     PyErr_Format(PyExc_RuntimeError, "Failed to initialize Assuan context: %s", gpg_strerror(rc));
     g_free(sockpath);
     return NULL;
@@ -222,9 +249,13 @@ client_connect(ClientObject *self, PyObject *args)
   rc = assuan_socket_connect(self->ctx, sockpath, ASSUAN_INVALID_PID, 0);
   g_free(sockpath);
   if (rc) {
+    assuan_release(self->ctx);
+    g_rw_lock_writer_unlock(&self->lock);
     PyErr_Format(PyExc_RuntimeError, "Failed to connect to server: %s", gpg_strerror(rc));
     return NULL;
   }
+
+  g_rw_lock_writer_unlock(&self->lock);
 
   Py_RETURN_NONE;
 }
@@ -234,8 +265,12 @@ client_disconnect(ClientObject *self, PyObject *args)
 {
   (void)args;
 
+  g_rw_lock_writer_lock(&self->lock);
+
   assuan_release(self->ctx);
   self->ctx = NULL;
+
+  g_rw_lock_writer_unlock(&self->lock);
 
   Py_RETURN_NONE;
 }
@@ -423,7 +458,13 @@ client_get_name(ClientObject *self, void *closure)
 {
   (void)closure;
 
-  return PyUnicode_FromString(self->name);
+  g_rw_lock_reader_lock(&self->lock);
+
+  PyObject *res = PyUnicode_FromString(self->name);
+
+  g_rw_lock_reader_unlock(&self->lock);
+
+  return res;
 }
 
 static struct PyMethodDef client_methods[] = {
