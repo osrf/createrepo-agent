@@ -102,7 +102,10 @@ if(WITH_PYTHON)
     src/python/init.c
     src/python/server.c)
   target_link_libraries(createrepo_agent PRIVATE
-    createrepo-agent-lib)
+    assuan
+    createrepo-agent-lib
+    createrepo_c
+    gpgme)
 
   if(SKBUILD)
     set(PYTHON_INSTALL_DIR ${SKBUILD_PLATLIB_DIR})

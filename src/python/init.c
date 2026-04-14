@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <assuan.h>
+#include <createrepo_c/createrepo_c.h>
 #include <gpgme.h>
 #include <Python.h>
 
@@ -24,6 +25,8 @@ void free_createrepo_agent(void *self)
 {
   (void)self;
 
+  cr_package_parser_cleanup();
+  cr_xml_dump_cleanup();
   assuan_sock_deinit();
 }
 
@@ -42,22 +45,36 @@ static struct PyModuleDef createrepo_agent_module_def = {
 PyObject *
 PyInit_createrepo_agent(void)
 {
-  PyObject *m = PyModule_Create(&createrepo_agent_module_def);
+  PyObject *m;
+  gpg_error_t rc;
+
+  m = PyModule_Create(&createrepo_agent_module_def);
   if (!m) {
     return NULL;
   }
 
   gpgrt_check_version(NULL);
   gpgme_check_version(NULL);
-  assuan_sock_init();
+
+  rc = assuan_sock_init();
+  if (rc) {
+    PyErr_Format(PyExc_RuntimeError, "assuan_sock_init failed: %s", gpg_strerror(rc));
+    Py_DECREF(m);
+    return NULL;
+  }
+
+  cr_xml_dump_init();
+  cr_package_parser_init();
 
   if (PyType_Ready(&Client_Type) < 0) {
+    Py_DECREF(m);
     return NULL;
   }
   Py_INCREF(&Client_Type);
   PyModule_AddObject(m, "Client", (PyObject *)&Client_Type);
 
   if (PyType_Ready(&Server_Type) < 0) {
+    Py_DECREF(m);
     return NULL;
   }
   Py_INCREF(&Server_Type);

@@ -15,16 +15,28 @@
 #include <assuan.h>
 #include <gpgme.h>
 #include <gtest/gtest.h>
+#include <createrepo_c/createrepo_c.h>
 
 int main(int argc, char * argv[])
 {
+  gpg_error_t rc;
   int ret;
 
   gpgrt_check_version(NULL);
   gpgme_check_version(NULL);
-  assuan_sock_init();
+  rc = assuan_sock_init();
+  if (rc) {
+    fprintf(stderr, "failed to initialize assuan socket: %s\n", gpg_strerror(rc));
+    return rc;
+  }
+  cr_xml_dump_init();
+  cr_package_parser_init();
+
   ::testing::InitGoogleTest(&argc, argv);
   ret = RUN_ALL_TESTS();
+
+  cr_package_parser_cleanup();
+  cr_xml_dump_cleanup();
   assuan_sock_deinit();
   return ret;
 }
