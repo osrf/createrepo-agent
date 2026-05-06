@@ -48,23 +48,25 @@ PyInit_createrepo_agent(void)
   PyObject *m;
   gpg_error_t rc;
 
-  m = PyModule_Create(&createrepo_agent_module_def);
-  if (!m) {
-    return NULL;
-  }
-
   gpgrt_check_version(NULL);
   gpgme_check_version(NULL);
 
   rc = assuan_sock_init();
   if (rc) {
     PyErr_Format(PyExc_RuntimeError, "assuan_sock_init failed: %s", gpg_strerror(rc));
-    Py_DECREF(m);
     return NULL;
   }
 
   cr_xml_dump_init();
   cr_package_parser_init();
+
+  m = PyModule_Create(&createrepo_agent_module_def);
+  if (!m) {
+    cr_package_parser_cleanup();
+    cr_xml_dump_cleanup();
+    assuan_sock_deinit();
+    return NULL;
+  }
 
   if (PyType_Ready(&Client_Type) < 0) {
     Py_DECREF(m);

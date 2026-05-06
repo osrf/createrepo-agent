@@ -27,7 +27,7 @@ int main(int argc, char * argv[])
   rc = assuan_sock_init();
   if (rc) {
     fprintf(stderr, "failed to initialize assuan socket: %s\n", gpg_strerror(rc));
-    return rc;
+    return 1;
   }
   cr_xml_dump_init();
   cr_package_parser_init();
