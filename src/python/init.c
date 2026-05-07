@@ -76,6 +76,7 @@ PyInit_createrepo_agent(void)
   PyModule_AddObject(m, "Client", (PyObject *)&Client_Type);
 
   if (PyType_Ready(&Server_Type) < 0) {
+    Py_DECREF((PyObject *)&Client_Type);
     Py_DECREF(m);
     return NULL;
   }
