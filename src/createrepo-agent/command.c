@@ -34,7 +34,7 @@ struct command_context
   gboolean invalidate_dependants;
   gboolean missing_ok;
   GError * err;
-  volatile sig_atomic_t * sentinel;
+  gint * worker_sentinel;
 };
 
 static const char * const greeting = "Greetings from creatrepo-agent " CRA_VERSION;
@@ -310,7 +310,7 @@ cmd_shutdown(assuan_context_t ctx, char * line)
     return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
   }
 
-  *cmd_ctx->sentinel = 1;
+  g_atomic_int_set(cmd_ctx->worker_sentinel, 1);
   shutdown(cmd_ctx->listen_fd, SHUT_RD);
   assuan_set_flag(ctx, ASSUAN_FORCE_CLOSE, 1);
 
@@ -788,7 +788,7 @@ client_worker(assuan_context_t ctx, gpointer unused)
 
   cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
   if (cmd_ctx) {
-    while (!done && !*cmd_ctx->sentinel) {
+    while (!done && !g_atomic_int_get(cmd_ctx->worker_sentinel)) {
       rc = assuan_process_next(ctx, &done);
       if (rc) {
         break;
@@ -808,6 +808,7 @@ command_handler(int fd, const char * path, volatile sig_atomic_t * sentinel)
   cra_Coordinator * coordinator;
   GThreadPool * pool;
   volatile sig_atomic_t local_sentinel = 0;
+  gint worker_sentinel = 0;
 
   if (NULL == sentinel) {
     sentinel = &local_sentinel;
@@ -827,7 +828,7 @@ command_handler(int fd, const char * path, volatile sig_atomic_t * sentinel)
     return;
   }
 
-  while (!*sentinel) {
+  while (!*sentinel && !g_atomic_int_get(&worker_sentinel)) {
     rc = assuan_new(&ctx);
     if (rc) {
       fprintf(stderr, "server context creation failed: %s\n", gpg_strerror(rc));
@@ -842,7 +843,7 @@ command_handler(int fd, const char * path, volatile sig_atomic_t * sentinel)
     }
 
     cmd_ctx->listen_fd = fd;
-    cmd_ctx->sentinel = sentinel;
+    cmd_ctx->worker_sentinel = &worker_sentinel;
     cmd_ctx->stage = cra_stage_new(coordinator);
     if (!cmd_ctx->stage) {
       fprintf(stderr, "stage init failed\n");
@@ -885,7 +886,7 @@ command_handler(int fd, const char * path, volatile sig_atomic_t * sentinel)
       if (gpg_err_code(rc) == gpg_err_code_from_errno(EINTR)) {
         client_worker_free(ctx);
         continue;
-      } else if (!*sentinel || gpg_err_code(rc) != gpg_err_code_from_errno(EINVAL)) {
+      } else if ((!*sentinel && !g_atomic_int_get(&worker_sentinel)) || gpg_err_code(rc) != gpg_err_code_from_errno(EINVAL)) {
         fprintf(stderr, "accept failed: %s\n", gpg_strerror(rc));
       }
       client_worker_free(ctx);
@@ -898,6 +899,8 @@ command_handler(int fd, const char * path, volatile sig_atomic_t * sentinel)
       break;
     }
   }
+
+  g_atomic_int_set(&worker_sentinel, 1);
 
   assuan_sock_close(fd);
   g_thread_pool_free(pool, FALSE, TRUE);
