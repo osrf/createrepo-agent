@@ -292,3 +292,26 @@ def test_touch(tmp_path, arches):
         repomd_path = arch_path / 'debug' / 'repodata' / 'repomd.xml'
 
         assert repomd_path.is_file()
+
+
+def test_touch_forces_rewrite(mutable_populated_repo: Path) -> None:
+    arch_path = mutable_populated_repo / 'x86_64'
+    repomd_path = arch_path / 'repodata' / 'repomd.xml'
+
+    assert repomd_path.is_file()
+    old_repomd_contents = repomd_path.read_text()
+
+    # A plain commit with nothing staged must not rewrite already-clean metadata.
+    with createrepo_agent.Server(str(mutable_populated_repo)):
+        with createrepo_agent.Client(str(mutable_populated_repo)) as c:
+            c.commit()
+
+    assert old_repomd_contents == repomd_path.read_text()
+
+    # 'touch' must force a metadata rewrite even though nothing else changed.
+    with createrepo_agent.Server(str(mutable_populated_repo)):
+        with createrepo_agent.Client(str(mutable_populated_repo)) as c:
+            c.touch(('x86_64',))
+            c.commit()
+
+    assert old_repomd_contents != repomd_path.read_text()
