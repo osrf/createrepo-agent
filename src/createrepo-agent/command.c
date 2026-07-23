@@ -680,6 +680,52 @@ cmd_sync_pattern(assuan_context_t ctx, char * line)
   return cmd_ok(ctx);
 }
 
+#define HLP_TOUCH \
+  "TOUCH [ARCH ...]\n\nForce write of metadata even if there are no changes"
+gpg_error_t
+cmd_touch(assuan_context_t ctx, char * line)
+{
+  struct command_context * cmd_ctx;
+  char * arch;
+  int rc;
+
+  cmd_ctx = (struct command_context *)assuan_get_pointer(ctx);
+  if (!cmd_ctx) {
+    return cmd_error(ctx, GPG_ERR_ASSUAN_SERVER_FAULT, NULL);
+  }
+
+  if (!*line) {
+    rc = cra_stage_touch(cmd_ctx->stage, NULL);
+    if (rc) {
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    return cmd_ok(ctx);
+  }
+
+  while (*line) {
+    arch = line;
+    while (*line && *line != ' ' && *line != '\t') {
+      line++;
+    }
+    if (*line) {
+      *line = '\0';
+      line++;
+    }
+
+    rc = cra_stage_touch(cmd_ctx->stage, arch);
+    if (rc) {
+      return cmd_error(ctx, GPG_ERR_GENERAL, cr_strerror(rc));
+    }
+
+    while (*line == ' ' || *line == '\t') {
+      line++;
+    }
+  }
+
+  return cmd_ok(ctx);
+}
+
 static const struct
 {
   const char * const name;
@@ -693,6 +739,7 @@ static const struct
   {"SHUTDOWN", cmd_shutdown, HLP_SHUTDOWN},
   {"SYNC", cmd_sync, HLP_SYNC},
   {"SYNC_PATTERN", cmd_sync_pattern, HLP_SYNC_PATTERN},
+  {"TOUCH", cmd_touch, HLP_TOUCH},
   {NULL},
 };
 
