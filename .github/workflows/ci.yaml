@@ -27,7 +27,7 @@ jobs:
           valgrind
         env:
           DEBIAN_FRONTEND: noninteractive
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: mkdir -p build
       - run: >
           cmake ..
@@ -70,5 +70,5 @@ jobs:
   yamllint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: yamllint .
