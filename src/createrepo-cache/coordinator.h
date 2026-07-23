@@ -58,6 +58,9 @@ cra_stage_pattern_remove(
   cra_Stage * stage, const char * arch_name, GRegex * pattern,
   gboolean family, gboolean dependants, gboolean missing_ok);
 
+int
+cra_stage_touch(cra_Stage * stage, const char * arch_name);
+
 #ifdef __cplusplus
 }
 #endif

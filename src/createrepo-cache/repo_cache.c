@@ -1997,6 +1997,26 @@ cra_sign_repomd(
 }
 
 int
+cra_cache_touch(cra_Cache * cache, const char * arch_name)
+{
+  cra_ArchCache * arch = NULL;
+
+  if (!arch_name) {
+    cache->source_repo->flags |= CRA_REPO_DIRTY;
+  } else {
+    arch = g_hash_table_lookup(cache->arches, arch_name);
+    if (!arch) {
+      return CRE_BADARG;
+    }
+    arch->arch_repo->flags |= CRA_REPO_DIRTY;
+    arch->debug_repo->flags |= CRA_REPO_DIRTY;
+    cache->source_repo->flags |= CRA_REPO_DIRTY;
+  }
+
+  return CRE_OK;
+}
+
+int
 cra_cache_flush(cra_Cache * cache)
 {
   int rc;

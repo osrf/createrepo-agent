@@ -36,6 +36,7 @@ typedef struct
   gboolean remove_family;
   gboolean remove_dependants;
   gboolean remove_missing_ok;
+  gboolean touch;
 } cra_StageOperation;
 
 struct _cra_Coordinator

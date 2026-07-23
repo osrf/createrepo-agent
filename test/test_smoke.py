@@ -258,3 +258,60 @@ def test_option_arguments(tmp_path: Path, option_name: str) -> None:
             # Only one argument accepted
             with pytest.raises(TypeError):
                 setter(True, None)
+
+
+@pytest.mark.parametrize('arches', (
+    (('x86_64', )),
+    (('aarch64', 'x86_64')),
+))
+def test_touch(tmp_path, arches):
+    with createrepo_agent.Server(str(tmp_path)):
+        with createrepo_agent.Client(str(tmp_path)) as c:
+            with pytest.raises(TypeError):
+                c.touch(1)
+            with pytest.raises(TypeError):
+                c.touch((1,))
+            with pytest.raises(TypeError):
+                c.touch(arches, 1)
+            c.touch()
+            c.touch(None)
+            c.touch(arches)
+            c.commit()
+
+    srpm_path = tmp_path / 'SRPMS'
+    repomd_path = srpm_path / 'repodata' / 'repomd.xml'
+
+    assert repomd_path.is_file()
+
+    for arch in arches:
+        arch_path = tmp_path / arch
+        repomd_path = arch_path / 'repodata' / 'repomd.xml'
+
+        assert repomd_path.is_file()
+
+        repomd_path = arch_path / 'debug' / 'repodata' / 'repomd.xml'
+
+        assert repomd_path.is_file()
+
+
+def test_touch_forces_rewrite(mutable_populated_repo: Path) -> None:
+    arch_path = mutable_populated_repo / 'x86_64'
+    repomd_path = arch_path / 'repodata' / 'repomd.xml'
+
+    assert repomd_path.is_file()
+    old_repomd_contents = repomd_path.read_text()
+
+    # A plain commit with nothing staged must not rewrite already-clean metadata.
+    with createrepo_agent.Server(str(mutable_populated_repo)):
+        with createrepo_agent.Client(str(mutable_populated_repo)) as c:
+            c.commit()
+
+    assert old_repomd_contents == repomd_path.read_text()
+
+    # 'touch' must force a metadata rewrite even though nothing else changed.
+    with createrepo_agent.Server(str(mutable_populated_repo)):
+        with createrepo_agent.Client(str(mutable_populated_repo)) as c:
+            c.touch(('x86_64',))
+            c.commit()
+
+    assert old_repomd_contents != repomd_path.read_text()
