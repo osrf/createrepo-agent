@@ -178,6 +178,10 @@ cra_coordinator_commit(cra_Coordinator * coordinator)
         }
       }
 
+      if (!rc && op->touch) {
+        rc = cra_cache_touch(coordinator->cache, op->arch_name);
+      }
+
       cra_stage_operation_free(op);
     }
 
@@ -382,6 +386,23 @@ cra_stage_pattern_remove(
   op->remove_family = family;
   op->remove_dependants = dependants;
   op->remove_missing_ok = missing_ok;
+
+  g_queue_push_tail(stage->operations, op);
+
+  return CRE_OK;
+}
+
+int
+cra_stage_touch(cra_Stage * stage, const char * arch_name)
+{
+  cra_StageOperation * op;
+
+  op = cra_stage_operation_new(arch_name);
+  if (!op) {
+    return CRE_MEMORY;
+  }
+
+  op->touch = TRUE;
 
   g_queue_push_tail(stage->operations, op);
 

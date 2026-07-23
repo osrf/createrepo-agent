@@ -14,10 +14,21 @@
 
 #include <gpgme.h>
 #include <gtest/gtest.h>
+#include <createrepo_c/createrepo_c.h>
 
 int main(int argc, char * argv[])
 {
+  int ret;
+
+  gpgrt_check_version(NULL);
   gpgme_check_version(NULL);
+  cr_xml_dump_init();
+  cr_package_parser_init();
+
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  ret = RUN_ALL_TESTS();
+
+  cr_package_parser_cleanup();
+  cr_xml_dump_cleanup();
+  return ret;
 }
