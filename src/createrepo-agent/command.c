@@ -893,6 +893,7 @@ command_handler(int fd, const char * path, volatile sig_atomic_t * sentinel)
     cmd_ctx->stage = cra_stage_new(coordinator);
     if (!cmd_ctx->stage) {
       fprintf(stderr, "stage init failed\n");
+      free(cmd_ctx);
       client_worker_free(ctx);
       break;
     }
