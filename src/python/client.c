@@ -276,6 +276,68 @@ client_disconnect(ClientObject *self, PyObject *args)
 }
 
 static PyObject *
+client_remove_name(ClientObject *self, PyObject *args)
+{
+  char *name = NULL;
+  PyObject *arches = NULL;
+  gchar *arch_list = NULL;
+  gchar *cmd;
+  PyObject *ret;
+
+  if (!PyArg_ParseTuple(args, "s|O", &name, &arches)) {
+    return NULL;
+  }
+
+  if (arches != NULL && arches != Py_None) {
+    arch_list = parse_arch_list(arches);
+    if (NULL == arch_list) {
+      return NULL;
+    }
+  }
+
+  cmd = g_strjoin(" ", "REMOVE_NAME", name, arch_list, NULL);
+  g_free(arch_list);
+  if (!cmd) {
+    return PyErr_NoMemory();
+  }
+
+  ret = execute_transaction(self, cmd);
+  g_free(cmd);
+  return ret;
+}
+
+static PyObject *
+client_remove_pattern(ClientObject *self, PyObject *args)
+{
+  char *pattern = NULL;
+  PyObject *arches = NULL;
+  gchar *arch_list = NULL;
+  gchar *cmd;
+  PyObject *ret;
+
+  if (!PyArg_ParseTuple(args, "s|O", &pattern, &arches)) {
+    return NULL;
+  }
+
+  if (arches != NULL && arches != Py_None) {
+    arch_list = parse_arch_list(arches);
+    if (NULL == arch_list) {
+      return NULL;
+    }
+  }
+
+  cmd = g_strjoin(" ", "REMOVE_PATTERN", pattern, arch_list, NULL);
+  g_free(arch_list);
+  if (!cmd) {
+    return PyErr_NoMemory();
+  }
+
+  ret = execute_transaction(self, cmd);
+  g_free(cmd);
+  return ret;
+}
+
+static PyObject *
 set_option(ClientObject *self, const char * option_name, int value)
 {
   gchar * cmd;
@@ -318,6 +380,18 @@ client_set_invalidate_family(ClientObject *self, PyObject *args)
   }
 
   return set_option(self, "invalidate_family", invalidate_family);
+}
+
+static PyObject *
+client_set_missing_ok(ClientObject *self, PyObject *args)
+{
+  int missing_ok;
+
+  if (!PyArg_ParseTuple(args, "p", &missing_ok)) {
+    return NULL;
+  }
+
+  return set_option(self, "missing_ok", missing_ok);
 }
 
 static PyObject *
@@ -364,6 +438,36 @@ client_sync(ClientObject *self, PyObject *args, PyObject *kwargs)
 }
 
 static PyObject *
+client_touch(ClientObject *self, PyObject *args)
+{
+  PyObject *arches = NULL;
+  gchar *arch_list = NULL;
+  gchar *cmd;
+  PyObject *ret;
+
+  if (!PyArg_ParseTuple(args, "|O", &arches)) {
+    return NULL;
+  }
+
+  if (arches != NULL && arches != Py_None) {
+    arch_list = parse_arch_list(arches);
+    if (NULL == arch_list) {
+      return NULL;
+    }
+  }
+
+  cmd = g_strjoin(" ", "TOUCH", arch_list, NULL);
+  g_free(arch_list);
+  if (!cmd) {
+    return PyErr_NoMemory();
+  }
+
+  ret = execute_transaction(self, cmd);
+  g_free(cmd);
+  return ret;
+}
+
+static PyObject *
 client_enter(ClientObject *self, PyObject *args)
 {
   (void)args;
@@ -398,9 +502,13 @@ static struct PyMethodDef client_methods[] = {
   {"commit", (PyCFunction)client_commit, METH_NOARGS, NULL},
   {"connect", (PyCFunction)client_connect, METH_NOARGS, NULL},
   {"disconnect", (PyCFunction)client_disconnect, METH_NOARGS, NULL},
+  {"remove_name", (PyCFunction)client_remove_name, METH_VARARGS, NULL},
+  {"remove_pattern", (PyCFunction)client_remove_pattern, METH_VARARGS, NULL},
   {"set_invalidate_dependants", (PyCFunction)client_set_invalidate_dependants, METH_VARARGS, NULL},
   {"set_invalidate_family", (PyCFunction)client_set_invalidate_family, METH_VARARGS, NULL},
+  {"set_missing_ok", (PyCFunction)client_set_missing_ok, METH_VARARGS, NULL},
   {"sync", (PyCFunction)(void(*)(void))client_sync, METH_VARARGS | METH_KEYWORDS, NULL},
+  {"touch", (PyCFunction)client_touch, METH_VARARGS, NULL},
   {"__enter__", (PyCFunction)client_enter, METH_NOARGS, NULL},
   {"__exit__", (PyCFunction)client_disconnect, METH_VARARGS, NULL},
   {NULL, NULL, 0, NULL}
@@ -419,6 +527,7 @@ PyTypeObject Client_Type = {
   .tp_dealloc = (destructor)client_dealloc,
   .tp_init = (initproc)client_init,
   .tp_repr = (reprfunc)client_repr,
+  .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
   .tp_methods = client_methods,
   .tp_getset = client_properties,
 };
