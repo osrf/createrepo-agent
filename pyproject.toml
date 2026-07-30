@@ -25,6 +25,7 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
   "Programming Language :: C",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: Free Threading :: 2 - Beta",
   "Topic :: System :: Archiving :: Packaging",
 ]
 
