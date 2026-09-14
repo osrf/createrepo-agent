@@ -112,7 +112,6 @@ server_shutdown_thread(ServerObject *self, PyObject *args)
   self->sentinel = 1;
   if (ASSUAN_INVALID_FD != self->fd) {
     shutdown(self->fd, SHUT_RD);
-    self->fd = ASSUAN_INVALID_FD;
   }
 
   if (NULL != self->thread) {
@@ -120,6 +119,7 @@ server_shutdown_thread(ServerObject *self, PyObject *args)
     self->thread = NULL;
   }
 
+  self->fd = ASSUAN_INVALID_FD;
   self->sentinel = 0;
 
   Py_RETURN_NONE;
