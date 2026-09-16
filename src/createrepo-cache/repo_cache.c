@@ -1822,6 +1822,8 @@ cra_curate_old_repomd(cr_Repomd * repomd, gchar * path, gint64 expired)
           if (err == ENOENT) {
             g_warning("Expected metadata file %s was already missing on curation", location_real);
           } else {
+            g_warning(
+              "Failed to remove metadata file %s (%d): %s", location_real, err, strerror(err));
             g_free(location_real);
             return CRE_IO;
           }
