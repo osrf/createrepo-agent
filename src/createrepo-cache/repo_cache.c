@@ -1725,7 +1725,12 @@ link_file(const char * src, const char * dst, const char * tmp)
 
   rc = errno;
   if (unlink(tmp)) {
-    g_warning("Failed to clean up temporary file at %s", tmp);
+    int err = errno;
+    if (err == ENOENT) {
+      g_debug("Temporary link file %s was not present for cleanup", tmp);
+    } else {
+      g_warning("Failed to clean up temporary file at %s (%d): %s", tmp, err, strerror(err));
+    }
   }
 
   errno = rc;
@@ -1813,8 +1818,15 @@ cra_curate_old_repomd(cr_Repomd * repomd, gchar * path, gint64 expired)
           return CRE_MEMORY;
         }
         if (remove(location_real)) {
-          g_free(location_real);
-          return CRE_IO;
+          int err = errno;
+          if (err == ENOENT) {
+            g_warning("Expected metadata file %s was already missing on curation", location_real);
+          } else {
+            g_warning(
+              "Failed to remove metadata file %s (%d): %s", location_real, err, strerror(err));
+            g_free(location_real);
+            return CRE_IO;
+          }
         }
         g_free(location_real);
         cr_repomd_remove_record(repomd, record->type);
@@ -1906,10 +1918,15 @@ cra_repo_commit_worker(cra_RepoFlushTask * task, void * user_data)
   g_hash_table_iter_init(&iter, task->repo->pending_rems);
   while (g_hash_table_iter_next(&iter, (gpointer *)&dst, NULL)) {
     g_debug("Removing package at %s", dst);
-    if ((rc = remove(dst))) {
-      g_warning("Failed to remove file %s (%d): %s", dst, rc, strerror(rc));
-      task->rc = CRE_IO;
-      return;
+    if (remove(dst)) {
+      int err = errno;
+      if (err == ENOENT) {
+        g_warning("Expected package file %s was already missing on deletion", dst);
+      } else {
+        g_warning("Failed to remove file %s (%d): %s", dst, err, strerror(err));
+        task->rc = CRE_IO;
+        return;
+      }
     }
     g_hash_table_iter_remove(&iter);
   }
